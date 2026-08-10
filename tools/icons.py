@@ -1,6 +1,6 @@
 """Icono, splash y adaptive-icon: un globo estilizado con anillo orbital."""
 import math
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 BG = (5, 6, 15)
 
@@ -79,8 +79,58 @@ def globe(size, r_frac=0.34, with_bg=True, glow=True):
     return img.resize((size, size), Image.LANCZOS)
 
 
+def monochrome(size=1024, r_frac=0.26):
+    """Silueta plana para los iconos temáticos de Android 13+ (Material You).
+
+    El sistema la recolorea, así que solo importa la forma: blanco sobre transparente
+    y todo dentro de la zona segura (66 % del lienzo)."""
+    S = size * 3
+    img = Image.new('RGBA', (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    cx = cy = S / 2
+    R = S * r_frac
+    W = max(3, int(S * 0.016))
+
+    d.ellipse([cx - R, cy - R, cx + R, cy + R], fill=(255, 255, 255, 255))
+
+    # meridianos y paralelos "vaciados" para que se lea como globo
+    holes = Image.new('L', (S, S), 0)
+    dh = ImageDraw.Draw(holes)
+    for k in (0.34, 0.7):
+        dh.ellipse([cx - R * k, cy - R, cx + R * k, cy + R], outline=255, width=W)
+    dh.line([(cx, cy - R), (cx, cy + R)], fill=255, width=W)
+    for f in (-0.52, 0.0, 0.52):
+        yy = cy + R * f
+        hw = R * math.sqrt(max(0.0, 1 - f * f))
+        hh = R * 0.14 * math.sqrt(max(0.05, 1 - f * f))
+        dh.ellipse([cx - hw, yy - hh, cx + hw, yy + hh], outline=255, width=W)
+    mask = Image.new('L', (S, S), 0)
+    ImageDraw.Draw(mask).ellipse([cx - R, cy - R, cx + R, cy + R], fill=255)
+    holes = ImageChops.multiply(holes, mask)
+    img.putalpha(ImageChops.subtract(img.getchannel('A'), holes))
+
+    # anillo orbital
+    ring = Image.new('RGBA', (S, S), (0, 0, 0, 0))
+    rr = R * 1.42
+    ImageDraw.Draw(ring).ellipse(
+        [cx - rr, cy - rr * 0.36, cx + rr, cy + rr * 0.36],
+        outline=(255, 255, 255, 255), width=int(W * 1.3)
+    )
+    ring = ring.rotate(-24, resample=Image.BICUBIC, center=(cx, cy))
+    occ = Image.new('L', (S, S), 255)
+    ImageDraw.Draw(occ).pieslice([cx - R, cy - R, cx + R, cy + R], 180, 360, fill=0)
+    ring.putalpha(ImageChops.multiply(ring.getchannel('A'), occ))
+
+    return Image.alpha_composite(img, ring).resize((size, size), Image.LANCZOS)
+
+
 globe(1024).convert('RGB').save('icon.png', optimize=True)
 globe(1024, r_frac=0.26, with_bg=False).save('adaptive-icon.png', optimize=True)
+monochrome(1024).save('adaptive-icon-mono.png', optimize=True)
+# El splash se compone sobre backgroundColor: el logo va transparente y sin halo.
+globe(1024, r_frac=0.30, with_bg=False, glow=False).save('splash-icon.png', optimize=True)
 globe(1024, r_frac=0.30).convert('RGB').save('splash.png', optimize=True)
+globe(256, r_frac=0.36).convert('RGB').resize((64, 64), Image.LANCZOS).save('favicon.png', optimize=True)
 globe(512).convert('RGB').resize((256, 256)).save('icon_prev.png')
+monochrome(256).save('mono_prev.png')
 print('iconos ok')
