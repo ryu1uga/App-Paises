@@ -76,11 +76,20 @@ for lat in range(-60, 61, 30):
     dg.line([(0, (90 - lat) / 180 * H), (W, (90 - lat) / 180 * H)], fill=20, width=1)
 img = Image.composite(Image.new('RGB', (W, H), (150, 195, 255)), img, grat)
 
-img.save('earth.png', optimize=True)
-print('earth.png', img.size)
+# JPEG en vez de PNG: el mapa no necesita alfa y pesa ~10 veces menos, lo que
+# recorta drásticamente el tiempo de carga del globo en el móvil.
+img.save('earth.jpg', quality=86, optimize=True, progressive=True)
+print('earth.jpg', img.size)
 
-# máscara especular (océano brillante, tierra mate)
-ImageChops.invert(land_mask).point(lambda v: int(v * 0.92)).save('earth-spec.png', optimize=True)
+# versión diminuta que se muestra al instante mientras llega la grande
+img.resize((512, 256), Image.LANCZOS).save('earth-low.jpg', quality=78, optimize=True)
+print('earth-low.jpg', (512, 256))
+
+# máscara especular (océano brillante, tierra mate) — escala de grises
+(ImageChops.invert(land_mask)
+    .point(lambda v: int(v * 0.92))
+    .resize((1024, 512), Image.LANCZOS)
+    .save('earth-spec.jpg', quality=80, optimize=True))
 
 # nubes procedurales
 CW, CH = W // 2, H // 2
@@ -95,7 +104,8 @@ for y in range(CH):
     f = 1.0 - min(1.0, max(0.0, (abs(lat) - 55) / 35.0)) * 0.8
     for x in range(CW):
         pa[x, y] = int(pa[x, y] * f)
-Image.merge('RGBA', (Image.new('L', (CW, CH), 255),) * 3 + (acc,)).save('earth-clouds.png', optimize=True)
-print('earth-clouds.png', (CW, CH))
+# three usa el canal verde del alphaMap, así que basta una imagen en gris.
+acc.save('earth-clouds.jpg', quality=78, optimize=True)
+print('earth-clouds.jpg', (CW, CH))
 
-Image.open('earth.png').resize((900, 450)).save('prev.png')
+img.resize((900, 450)).save('prev.png')

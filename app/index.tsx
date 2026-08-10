@@ -65,6 +65,7 @@ export default function Home() {
                 style={StyleSheet.absoluteFill}
                 autoRotate
                 interactive={false}
+                quality="lite"
                 initial={{ lat: 12, lng: -30, zoom: 3.35 }}
               />
               <LinearGradient

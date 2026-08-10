@@ -57,6 +57,14 @@ Está construido a mano sobre `expo-gl` + `three.js`, sin depender de `expo-thre
 
 La correspondencia lat/lng ↔ posición 3D ↔ rotación de cámara está verificada numéricamente sobre 2520 coordenadas (error < 1e-13°).
 
+### Rendimiento
+
+El globo aparece en dos fases: primero monta con un mapa de 512×256 (20 KB) y ya gira,
+y en segundo plano sube el de 2048×1024 más el especular y las nubes. Las texturas van en
+JPEG (364 KB en total, frente a 1,85 MB en PNG) y se precargan al arrancar la app, en
+paralelo con las fuentes. Los globos decorativos —inicio y ficha de país— usan
+`quality="lite"`: solo el mapa, menos polígonos y menos estrellas.
+
 ---
 
 ## Datos

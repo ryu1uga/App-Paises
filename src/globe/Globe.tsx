@@ -20,11 +20,16 @@ import {
   createStarfield,
   disposeObject,
   loadTextureAsync,
+  preloadGlobeAssets,
 } from './glHelpers';
 
-const EARTH = require('../../assets/textures/earth.png');
-const CLOUDS = require('../../assets/textures/earth-clouds.png');
-const SPEC = require('../../assets/textures/earth-spec.png');
+const EARTH_LOW = require('../../assets/textures/earth-low.jpg');
+const EARTH = require('../../assets/textures/earth.jpg');
+const CLOUDS = require('../../assets/textures/earth-clouds.jpg');
+const SPEC = require('../../assets/textures/earth-spec.jpg');
+
+/** Todas las texturas del globo, para precargarlas al arrancar la app. */
+export const GLOBE_TEXTURES = [EARTH_LOW, EARTH, CLOUDS, SPEC];
 
 const R = 1; // radio del globo en unidades de escena
 const MIN_ZOOM = 2.05;
@@ -64,6 +69,11 @@ type Props = {
   /** Muestra el retículo central (modo "ubicar" con puntería). */
   showReticle?: boolean;
   onReady?: () => void;
+  /**
+   * `full` = mapa en alta, nubes, especular y estrellas (pantallas donde el globo manda).
+   * `lite` = solo el mapa, menos geometría y menos estrellas (globos decorativos).
+   */
+  quality?: 'full' | 'lite';
 };
 
 /** Estado mutable que vive fuera de React para no re-renderizar en cada frame. */
@@ -91,6 +101,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
     onPickPoint,
     showReticle = false,
     onReady,
+    quality = 'full',
   },
   ref
 ) {
@@ -99,6 +110,8 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   const rafRef = useRef<number | null>(null);
   /** Tamaño del View en unidades lógicas (dp), necesario para el raycast del tap. */
   const layout = useRef({ width: 1, height: 1 });
+  /** Evita tocar la escena si el componente se desmonta mientras cargan las texturas. */
+  const disposed = useRef(false);
 
   // rotación objetivo (con amortiguación) y velocidad inercial
   const rot = useRef({ x: 0, y: 0 });
@@ -148,43 +161,40 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
       rim.position.set(3, -1.5, -2.5);
       scene.add(rim);
 
+      const lite = quality === 'lite';
+
       // --- estrellas ---
-      const stars = createStarfield(1000, 46);
+      const stars = createStarfield(lite ? 420 : 900, 46);
       scene.add(stars);
 
-      // --- texturas ---
-      const [earthTex, cloudTex, specTex] = await Promise.all([
-        loadTextureAsync(EARTH),
-        loadTextureAsync(CLOUDS),
-        loadTextureAsync(SPEC),
-      ]);
-      const maxAniso = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
-      earthTex.anisotropy = maxAniso;
+      // --- primer plano: solo el mapa en baja resolución (20 KB) ---
+      // Así la escena aparece casi al instante en vez de esperar a 300 KB de texturas.
+      const lowTex = await loadTextureAsync(EARTH_LOW, { mipmaps: false });
 
-      // --- tierra ---
+      const earthMaterial = new THREE.MeshPhongMaterial({
+        map: lowTex,
+        specular: new THREE.Color(0x4b6cb7),
+        shininess: 26,
+        emissive: new THREE.Color(0x0a1230),
+        emissiveIntensity: 0.75,
+      });
+
       const earth = new THREE.Mesh(
-        new THREE.SphereGeometry(R, 96, 64),
-        new THREE.MeshPhongMaterial({
-          map: earthTex,
-          specularMap: specTex,
-          specular: new THREE.Color(0x4b6cb7),
-          shininess: 26,
-          emissive: new THREE.Color(0x0a1230),
-          emissiveIntensity: 0.75,
-        })
+        new THREE.SphereGeometry(R, lite ? 48 : 72, lite ? 32 : 48),
+        earthMaterial
       );
 
-      // --- nubes ---
+      // --- nubes (solo en calidad completa) ---
       const clouds = new THREE.Mesh(
-        new THREE.SphereGeometry(R * 1.012, 64, 48),
+        new THREE.SphereGeometry(R * 1.012, 48, 32),
         new THREE.MeshPhongMaterial({
-          alphaMap: cloudTex,
           transparent: true,
-          opacity: 0.34,
+          opacity: lite ? 0 : 0.34,
           color: 0xffffff,
           depthWrite: false,
         })
       );
+      clouds.visible = !lite;
 
       // --- atmósfera (interior + halo exterior) ---
       const glow = createAtmosphere(R * 1.16, '#38BDF8', 3.0);
@@ -226,6 +236,34 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
       syncArc();
       setLoading(false);
       onReady?.();
+
+      // --- segunda fase: texturas grandes, ya con el globo girando en pantalla ---
+      const maxAniso = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
+      void (async () => {
+        try {
+          const earthTex = await loadTextureAsync(EARTH);
+          if (disposed.current) return;
+          earthTex.anisotropy = maxAniso;
+          earthMaterial.map = earthTex;
+          earthMaterial.needsUpdate = true;
+          lowTex.dispose();
+
+          if (lite) return;
+
+          const [specTex, cloudTex] = await Promise.all([
+            loadTextureAsync(SPEC, { srgb: false }),
+            loadTextureAsync(CLOUDS, { srgb: false }),
+          ]);
+          if (disposed.current) return;
+          earthMaterial.specularMap = specTex;
+          earthMaterial.needsUpdate = true;
+          const cloudMat = clouds.material as THREE.MeshPhongMaterial;
+          cloudMat.alphaMap = cloudTex;
+          cloudMat.needsUpdate = true;
+        } catch {
+          // Si falla la alta resolución nos quedamos con la pequeña: el globo sigue usable.
+        }
+      })();
 
       const clock = new THREE.Clock();
 
@@ -371,6 +409,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
 
   React.useEffect(
     () => () => {
+      disposed.current = true;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       const s = sceneRef.current;
       if (s) {

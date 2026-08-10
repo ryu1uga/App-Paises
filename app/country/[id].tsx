@@ -68,6 +68,7 @@ export default function CountryDetail() {
             style={StyleSheet.absoluteFill}
             autoRotate={false}
             interactive={false}
+            quality="lite"
             initial={{ lat: country.lat, lng: country.lng, zoom: 2.55 }}
             markers={[
               { id: country.id, lat: country.lat, lng: country.lng, color: accent, kind: 'pulse' },
