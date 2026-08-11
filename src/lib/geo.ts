@@ -49,14 +49,6 @@ export function haversine(
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
-/** Puntaje 0-100 para el modo "ubicar": 100 si acierta a <150 km, 0 a partir de 4000 km. */
-export function distanceScore(km: number): number {
-  if (km <= 150) return 100;
-  if (km >= 4000) return 0;
-  const t = (km - 150) / (4000 - 150);
-  return Math.round(100 * (1 - t) ** 1.6);
-}
-
 export function formatDistance(km: number): string {
   if (km < 10) return `${km.toFixed(1)} km`;
   if (km < 1000) return `${Math.round(km)} km`;

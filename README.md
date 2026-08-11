@@ -26,7 +26,7 @@ Para iterar con recarga en caliente hay un perfil `development`; todo está en
 | **Banderas** | Muestra una bandera, eliges el país entre 4 opciones |
 | **Bandera inversa** | Muestra el país, eliges su bandera |
 | **Capitales** | Muestra el país, eliges su capital |
-| **Ubicación** | Giras el globo y tocas dónde está el país; puntúa por cercanía |
+| **Ubicación** | Giras el globo y tocas dentro de las fronteras del país |
 | **Explorar** | Globo libre + buscador + ficha completa de cada país |
 
 Cada modo se puede filtrar por continente y elegir 8, 12, 20 o 30 preguntas.
@@ -69,6 +69,24 @@ contexto de WebGL 2 perfectamente válido daba positivo y el globo no arrancaba.
 `createRenderer` oculta ese global mientras construye el renderer y lo restaura después,
 solo cuando el contexto expone de verdad `createVertexArray` y `texStorage2D`. En un
 dispositivo con WebGL 1 auténtico se deja que three falle, que es lo correcto.
+
+### Acierto por fronteras
+
+El modo "ubicar" no puntúa por cercanía: acierta si el marcador cae **dentro** del país.
+Para resolverlo sin llevar polígonos ni hacer point-in-polygon en tiempo real, hay una
+segunda rejilla embebida de 2048×1024 —52 KB— donde cada byte dice qué país ocupa ese
+píxel. Un toque se traduce a coordenadas de rejilla y se lee el índice directamente.
+
+Detalles que hacen justo el veredicto:
+
+- Se admite un margen de 2 píxeles alrededor del toque, para no castigar el pulso en
+  costas y fronteras finas.
+- 14 países son más pequeños que un píxel (Mónaco, Malta, Maldivas…). Para ellos se
+  guarda su *alcance* real —la distancia del centroide a su punto más lejano— y se acepta
+  el acierto por proximidad. La superficie no serviría: Maldivas son 300 km² repartidos en
+  cientos de kilómetros de atolones.
+- Cuando fallas, la app te dice en qué país caíste ("Eso es Bolivia") y a qué distancia y
+  rumbo quedaba el correcto.
 
 ### Rendimiento
 

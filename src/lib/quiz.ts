@@ -125,7 +125,7 @@ export const MODE_META: Record<
   },
   locate: {
     title: 'Ubicación',
-    subtitle: 'Encuéntralo en el globo',
+    subtitle: 'Toca dentro de sus fronteras',
     icon: 'navigate',
     gradient: ['#2DD4BF', '#38BDF8'],
     route: '/game/locate',

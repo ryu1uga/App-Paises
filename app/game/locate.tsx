@@ -11,7 +11,8 @@ import { PrimaryButton } from '@/components/Pressables';
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import { Globe, type GlobeHandle, type GlobeMarker } from '@/globe/Globe';
-import { bearingLabel, distanceScore, formatDistance, haversine } from '@/lib/geo';
+import { bearingLabel, formatDistance, haversine } from '@/lib/geo';
+import { evaluateLocate, locateScore, type LocateOutcome } from '@/lib/locate';
 import { buildQuiz, type Question } from '@/lib/quiz';
 import { useProgress } from '@/store/progress';
 import { useSession } from '@/store/session';
@@ -34,6 +35,7 @@ export default function Locate() {
   const [index, setIndex] = React.useState(0);
   const [phase, setPhase] = React.useState<Phase>('aiming');
   const [guess, setGuess] = React.useState<{ lat: number; lng: number } | null>(null);
+  const [outcome, setOutcome] = React.useState<LocateOutcome | null>(null);
   const askedAt = React.useRef(Date.now());
 
   const q = questions[index];
@@ -47,12 +49,8 @@ export default function Locate() {
     askedAt.current = Date.now();
     setPhase('aiming');
     setGuess(null);
+    setOutcome(null);
   }, [index]);
-
-  const distance = React.useMemo(() => {
-    if (!guess || !target) return null;
-    return haversine(guess, { lat: target.lat, lng: target.lng });
-  }, [guess, target]);
 
   const confirm = () => {
     if (!target) return;
@@ -60,24 +58,31 @@ export default function Locate() {
     const point = guess ?? center;
     if (!point) return;
 
-    const km = haversine(point, { lat: target.lat, lng: target.lng });
-    const score = distanceScore(km);
-    const correct = score >= 55;
     const ms = Date.now() - askedAt.current;
+    const result = evaluateLocate(point, target);
+    const points = locateScore({
+      correct: result.correct,
+      msElapsed: ms,
+      streak,
+      difficulty: target.difficulty,
+    });
 
     setGuess(point);
+    setOutcome(result);
     setPhase('revealed');
     push({
       countryId: target.id,
-      correct,
-      distanceKm: km,
-      points: Math.round(score * (1 + Math.min(5, streak) * 0.06)),
+      correct: result.correct,
+      distanceKm: result.distanceKm,
+      points,
       ms,
     });
-    registerAnswer(target.id, correct);
+    registerAnswer(target.id, result.correct);
 
     void Haptics.notificationAsync(
-      correct ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning
+      result.correct
+        ? Haptics.NotificationFeedbackType.Success
+        : Haptics.NotificationFeedbackType.Error
     );
     globe.current?.flyTo(target.lat, target.lng, { zoom: 2.5, duration: 1100 });
   };
@@ -89,23 +94,25 @@ export default function Locate() {
 
   const markers = React.useMemo<GlobeMarker[]>(() => {
     if (phase !== 'revealed' || !target || !guess) return [];
+    // Si acertó, un solo marcador verde: el arco hacia el centro del país sobra.
+    if (outcome?.correct) {
+      return [{ id: 'guess', lat: guess.lat, lng: guess.lng, color: '#34D399', kind: 'pulse' }];
+    }
     return [
       { id: 'guess', lat: guess.lat, lng: guess.lng, color: '#FB7185', kind: 'pin' },
       { id: 'target', lat: target.lat, lng: target.lng, color: '#2DD4BF', kind: 'pulse' },
     ];
-  }, [phase, target, guess]);
+  }, [phase, target, guess, outcome]);
 
   const arc = React.useMemo(
     () =>
-      phase === 'revealed' && target && guess
+      phase === 'revealed' && target && guess && !outcome?.correct
         ? { from: guess, to: { lat: target.lat, lng: target.lng }, color: '#FBBF24' }
         : null,
-    [phase, target, guess]
+    [phase, target, guess, outcome]
   );
 
   if (!target) return null;
-
-  const score = distance != null ? distanceScore(distance) : 0;
 
   return (
     <Screen edges={['top']}>
@@ -165,7 +172,7 @@ export default function Locate() {
                 <Text style={[type.small, { color: colors.textDim, flex: 1 }]}>
                   {guess
                     ? `Marcado en ${fmtCoord(guess)}. Toca otro punto para corregir.`
-                    : 'Gira el globo y toca el lugar exacto. Pellizca para hacer zoom.'}
+                    : 'Gira el globo y toca dentro del país. Pellizca para hacer zoom.'}
                 </Text>
               </View>
               <PrimaryButton
@@ -181,34 +188,37 @@ export default function Locate() {
               <GlassCard
                 padding={18}
                 borderRadius={radius.xl}
-                accent={score >= 55 ? gradients.success : gradients.danger}
+                accent={outcome?.correct ? gradients.success : gradients.danger}
               >
                 <View style={styles.resultRow}>
+                  <View style={[styles.verdictIcon, outcome?.correct ? styles.verdictOk : styles.verdictBad]}>
+                    <Ionicons
+                      name={outcome?.correct ? 'checkmark' : 'close'}
+                      size={26}
+                      color={outcome?.correct ? colors.success : colors.danger}
+                    />
+                  </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[type.h2, { color: score >= 55 ? colors.success : colors.danger }]}>
-                      {resultTitle(score)}
+                    <Text
+                      style={[type.h2, { color: outcome?.correct ? colors.success : colors.danger }]}
+                    >
+                      {outcome?.correct ? '¡Correcto!' : 'Fallaste'}
                     </Text>
                     <Text style={[type.small, { color: colors.textDim, marginTop: 4 }]}>
-                      {distance != null && distance < 60
-                        ? '¡Justo en el sitio!'
-                        : `A ${formatDistance(distance ?? 0)} · estaba al ${bearingLabel(
-                            guess!,
-                            { lat: target.lat, lng: target.lng }
-                          )}`}
+                      {feedback(outcome, target.nameEs)}
                     </Text>
-                  </View>
-                  <View style={styles.scoreBubble}>
-                    <Text style={[type.h2, { color: colors.text }]}>{score}</Text>
-                    <Text style={[type.label, { color: colors.textFaint }]}>PTS</Text>
                   </View>
                 </View>
 
-                <View style={{ marginTop: 14 }}>
-                  <ProgressBar
-                    ratio={score / 100}
-                    gradient={score >= 55 ? gradients.success : gradients.ember}
-                  />
-                </View>
+                {!outcome?.correct && outcome && guess && (
+                  <View style={styles.missRow}>
+                    <Ionicons name="navigate-outline" size={15} color={colors.textFaint} />
+                    <Text style={[type.small, { color: colors.textFaint, flex: 1 }]}>
+                      {target.nameEs} estaba a {formatDistance(outcome.distanceKm)} al{' '}
+                      {bearingLabel(guess, { lat: target.lat, lng: target.lng })}
+                    </Text>
+                  </View>
+                )}
 
                 <PrimaryButton
                   label={index + 1 >= questions.length ? 'Ver resultados' : 'Siguiente país'}
@@ -226,12 +236,13 @@ export default function Locate() {
   );
 }
 
-function resultTitle(score: number): string {
-  if (score >= 95) return '¡Clavado!';
-  if (score >= 75) return '¡Muy cerca!';
-  if (score >= 55) return 'Aceptable';
-  if (score >= 25) return 'Lejos';
-  return 'Otro continente…';
+/** Texto bajo el veredicto: dice exactamente qué pasó. */
+function feedback(outcome: LocateOutcome | null, targetName: string): string {
+  if (!outcome) return '';
+  if (outcome.reason === 'inside') return `Tu marcador cayó dentro de ${targetName}.`;
+  if (outcome.reason === 'close') return `${targetName} es diminuto, pero diste en el clavo.`;
+  if (outcome.hit) return `Eso es ${outcome.hit.nameEs}.`;
+  return 'Marcaste en el mar.';
 }
 
 function fmtCoord(p: { lat: number; lng: number }): string {
@@ -276,14 +287,23 @@ const styles = StyleSheet.create({
   },
   hintRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  scoreBubble: {
+  verdictIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: 1.5,
+  },
+  verdictOk: { backgroundColor: 'rgba(52,211,153,0.14)', borderColor: 'rgba(52,211,153,0.45)' },
+  verdictBad: { backgroundColor: 'rgba(251,113,133,0.14)', borderColor: 'rgba(251,113,133,0.45)' },
+  missRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
 });

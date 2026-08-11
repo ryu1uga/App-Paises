@@ -19,6 +19,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { warmUpGlobeTextures } from '@/globe/earthTexture';
+import { warmUpCountryGrid } from '@/lib/locate';
 import { palette } from '@/theme/theme';
 
 void SplashScreen.preventAutoHideAsync();
@@ -42,7 +43,10 @@ export default function RootLayout() {
   // Genera las texturas del globo mientras se muestra el splash, para que la
   // primera pantalla con globo no pague los ~50 ms de construcción.
   React.useEffect(() => {
-    const id = setTimeout(warmUpGlobeTextures, 0);
+    const id = setTimeout(() => {
+      warmUpGlobeTextures();
+      warmUpCountryGrid();
+    }, 0);
     return () => clearTimeout(id);
   }, []);
 
