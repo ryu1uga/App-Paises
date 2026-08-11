@@ -18,16 +18,11 @@ import React from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { GLOBE_TEXTURES } from '@/globe/Globe';
-import { preloadGlobeAssets } from '@/globe/glHelpers';
+import { warmUpGlobeTextures } from '@/globe/earthTexture';
 import { palette } from '@/theme/theme';
 
 void SplashScreen.preventAutoHideAsync();
 void SystemUI.setBackgroundColorAsync(palette.void);
-
-// Las texturas del globo empiezan a descargarse en cuanto arranca el bundle,
-// en paralelo con las fuentes. Cuando el usuario llega al globo ya están en disco.
-void preloadGlobeAssets(GLOBE_TEXTURES);
 
 export default function RootLayout() {
   const [loaded] = useFonts({
@@ -43,6 +38,13 @@ export default function RootLayout() {
   React.useEffect(() => {
     if (loaded) void SplashScreen.hideAsync();
   }, [loaded]);
+
+  // Genera las texturas del globo mientras se muestra el splash, para que la
+  // primera pantalla con globo no pague los ~50 ms de construcción.
+  React.useEffect(() => {
+    const id = setTimeout(warmUpGlobeTextures, 0);
+    return () => clearTimeout(id);
+  }, []);
 
   if (!loaded) return null;
 

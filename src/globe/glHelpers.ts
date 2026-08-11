@@ -1,4 +1,3 @@
-import { Asset } from 'expo-asset';
 import type { ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
 
@@ -35,69 +34,6 @@ export function createRenderer(gl: ExpoWebGLRenderingContext): THREE.WebGLRender
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   return renderer;
-}
-
-/**
- * Caché de assets ya descargados. `Asset.downloadAsync()` sobre un módulo ya
- * resuelto es barato, pero en desarrollo cada llamada nueva puede volver a pedirlo
- * al servidor de Metro; memorizamos la promesa para que solo ocurra una vez por sesión.
- */
-const assetCache = new Map<number, Promise<Asset>>();
-
-export function preloadAsset(moduleId: number): Promise<Asset> {
-  let pending = assetCache.get(moduleId);
-  if (!pending) {
-    pending = (async () => {
-      const asset = Asset.fromModule(moduleId);
-      if (!asset.downloaded) await asset.downloadAsync();
-      return asset;
-    })();
-    assetCache.set(moduleId, pending);
-  }
-  return pending;
-}
-
-/** Descarga por adelantado todas las texturas del globo (llamar al arrancar la app). */
-export function preloadGlobeAssets(moduleIds: number[]): Promise<unknown> {
-  return Promise.all(moduleIds.map(preloadAsset));
-}
-
-/**
- * Carga una textura desde un `require('...jpg')`.
- *
- * Truco conocido de expo-gl: marcamos la textura como `isDataTexture` para que
- * three llame a `texImage2D(..., data)` pasando el Asset tal cual; el módulo
- * nativo de expo-gl detecta el `localUri` y sube el bitmap sin pasar por JS.
- *
- * `srgb: false` para mapas de datos (alfa, especular), que no son color.
- */
-export async function loadTextureAsync(
-  moduleId: number,
-  opts: { srgb?: boolean; mipmaps?: boolean } = {}
-): Promise<THREE.Texture> {
-  const { srgb = true, mipmaps = true } = opts;
-  const asset = await preloadAsset(moduleId);
-
-  const texture = new THREE.Texture();
-  // Forma específica de expo-gl, no del DOM.
-  texture.image = {
-    data: asset,
-    width: asset.width ?? 1,
-    height: asset.height ?? 1,
-    localUri: asset.localUri ?? asset.uri,
-  };
-  // @ts-expect-error: flag interna de three
-  texture.isDataTexture = true;
-  texture.needsUpdate = true;
-  texture.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  // Las texturas son potencia de dos, así que los mipmaps son válidos y evitan
-  // el aliasing al alejar el globo.
-  texture.minFilter = mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = mipmaps;
-  return texture;
 }
 
 /** Campo de estrellas procedural (posiciones + tamaños + tonos). */

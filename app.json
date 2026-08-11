@@ -7,11 +7,7 @@
     "icon": "./assets/icon.png",
     "scheme": "atlasquest",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "backgroundColor": "#05060F",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ryuichi.atlasquest",
@@ -21,7 +17,6 @@
     },
     "android": {
       "package": "com.ryuichi.atlasquest",
-      "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "monochromeImage": "./assets/adaptive-icon-mono.png",
@@ -29,7 +24,6 @@
       }
     },
     "web": {
-      "bundler": "metro",
       "output": "static",
       "favicon": "./assets/favicon.png"
     },

@@ -47,7 +47,7 @@ Todo se guarda en el dispositivo con Zustand + AsyncStorage.
 
 Está construido a mano sobre `expo-gl` + `three.js`, sin depender de `expo-three`:
 
-- **Textura propia**: `tools/masks.js` rasteriza los polígonos de Natural Earth (50 m) con `d3-geo` — que recorta correctamente el antimeridiano — y `tools/texture.py` colorea el resultado (océano en degradado, tierra teal→violeta, franja cálida tropical, hielo polar, fronteras y halo de costa). Todo offline, sin depender de servidores de tiles.
+- **Textura sin ficheros**: la geografía viaja como una máscara de 1024×512 (océano / tierra / frontera) comprimida con RLE y codificada en base64 **dentro del propio bundle** — 33 KB. Al arrancar se decodifica (4 ms) y se colorea en memoria hacia una `THREE.DataTexture`: océano en degradado, tierra teal→violeta, franja cálida tropical, hielo polar, fronteras y halo de costa. No hay imágenes que cargar, ni descargas, ni dependencia de la subida nativa de bitmaps de expo-gl. La máscara sale de Natural Earth (50 m) rasterizado con `d3-geo`, que recorta correctamente el antimeridiano (ver `tools/masks.js` y `tools/encode_mask.py`).
 - **Atmósfera** con shader Fresnel (halo interior + exterior).
 - **Nubes** procedurales en una esfera ligeramente mayor, con rotación independiente.
 - **Estrellas** con shader propio y parpadeo.
@@ -59,11 +59,13 @@ La correspondencia lat/lng ↔ posición 3D ↔ rotación de cámara está verif
 
 ### Rendimiento
 
-El globo aparece en dos fases: primero monta con un mapa de 512×256 (20 KB) y ya gira,
-y en segundo plano sube el de 2048×1024 más el especular y las nubes. Las texturas van en
-JPEG (364 KB en total, frente a 1,85 MB en PNG) y se precargan al arrancar la app, en
-paralelo con las fuentes. Los globos decorativos —inicio y ficha de país— usan
-`quality="lite"`: solo el mapa, menos polígonos y menos estrellas.
+`onContextCreate` es **síncrono**: no hay ni un `await` entre crear el contexto GL y
+arrancar el bucle de render, así que no existe la posibilidad de que una promesa
+rechazada deje el globo colgado en el spinner. Las tres texturas (mapa, especular y
+nubes) se construyen una sola vez —~60 ms en total— durante el splash y quedan
+cacheadas a nivel de módulo, compartidas por todas las pantallas. Los globos
+decorativos —inicio y ficha de país— usan `quality="lite"`: solo el mapa, menos
+polígonos y menos estrellas.
 
 ---
 

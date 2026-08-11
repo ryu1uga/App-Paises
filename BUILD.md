@@ -189,3 +189,20 @@ alinea las versiones con el SDK.
 **`Cannot find module 'babel-preset-expo'` al empaquetar**
 Debe estar en `devDependencies` del proyecto, no solo dentro de `expo/node_modules`.
 Ya viene declarado; si desaparece, `npm i -D babel-preset-expo`.
+
+**`expo doctor` falla en el build de EAS**
+Es un paso obligatorio del build, así que cualquier fallo lo aborta. Los dos motivos
+habituales:
+
+- *should NOT have additional property X* — el esquema de `app.json` cambió entre SDKs.
+  En el 57 desaparecieron `newArchEnabled` y `android.edgeToEdgeEnabled`, porque la nueva
+  arquitectura y edge-to-edge ya van siempre activas. Basta con borrar esos campos.
+- *packages match versions required by installed Expo SDK* — alguna dependencia se ha
+  desalineado. `npx expo install --check` lista las desviaciones y `--fix` las corrige.
+  Ojo con `react-dom`: si no está fijado, npm lo sube por su cuenta y arrastra a `react`
+  fuera de la versión que espera el SDK.
+
+**`Missing peer dependency: expo-constants`**
+`expo-router` lo necesita como dependencia directa aunque tu código no lo importe. Los
+módulos nativos que son peer hay que declararlos en `package.json`, no vale con que
+lleguen de forma transitiva.

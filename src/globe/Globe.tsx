@@ -7,11 +7,19 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as THREE from 'three';
 
 import { latLngToVector3, vector3ToLatLng } from '@/lib/geo';
+import { getCloudTexture, getEarthTexture, getSpecularTexture } from './earthTexture';
 import {
   createArc,
   createAtmosphere,
@@ -19,17 +27,7 @@ import {
   createRenderer,
   createStarfield,
   disposeObject,
-  loadTextureAsync,
-  preloadGlobeAssets,
 } from './glHelpers';
-
-const EARTH_LOW = require('../../assets/textures/earth-low.jpg');
-const EARTH = require('../../assets/textures/earth.jpg');
-const CLOUDS = require('../../assets/textures/earth-clouds.jpg');
-const SPEC = require('../../assets/textures/earth-spec.jpg');
-
-/** Todas las texturas del globo, para precargarlas al arrancar la app. */
-export const GLOBE_TEXTURES = [EARTH_LOW, EARTH, CLOUDS, SPEC];
 
 const R = 1; // radio del globo en unidades de escena
 const MIN_ZOOM = 2.05;
@@ -106,6 +104,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   ref
 ) {
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const sceneRef = useRef<SceneRefs | null>(null);
   const rafRef = useRef<number | null>(null);
   /** Tamaño del View en unidades lógicas (dp), necesario para el raycast del tap. */
@@ -139,194 +138,178 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
 
   /* ---------------- construcción de la escena ---------------- */
 
+  // Síncrono a propósito: sin `await`, no hay forma de que una promesa rechazada
+  // deje el globo colgado en el spinner para siempre.
   const onContextCreate = useCallback(
-    async (gl: ExpoWebGLRenderingContext) => {
-      const renderer = createRenderer(gl);
-      const scene = new THREE.Scene();
+    (gl: ExpoWebGLRenderingContext) => {
+      try {
+        const renderer = createRenderer(gl);
+        const scene = new THREE.Scene();
 
-      const camera = new THREE.PerspectiveCamera(
-        38,
-        gl.drawingBufferWidth / gl.drawingBufferHeight,
-        0.1,
-        200
-      );
-      camera.position.set(0, 0, zoom.current);
-
-      // --- luces ---
-      scene.add(new THREE.AmbientLight(0x8899ff, 0.55));
-      const sun = new THREE.DirectionalLight(0xfff4e0, 2.1);
-      sun.position.set(-3.2, 1.8, 2.4);
-      scene.add(sun);
-      const rim = new THREE.DirectionalLight(0x38bdf8, 0.9);
-      rim.position.set(3, -1.5, -2.5);
-      scene.add(rim);
-
-      const lite = quality === 'lite';
-
-      // --- estrellas ---
-      const stars = createStarfield(lite ? 420 : 900, 46);
-      scene.add(stars);
-
-      // --- primer plano: solo el mapa en baja resolución (20 KB) ---
-      // Así la escena aparece casi al instante en vez de esperar a 300 KB de texturas.
-      const lowTex = await loadTextureAsync(EARTH_LOW, { mipmaps: false });
-
-      const earthMaterial = new THREE.MeshPhongMaterial({
-        map: lowTex,
-        specular: new THREE.Color(0x4b6cb7),
-        shininess: 26,
-        emissive: new THREE.Color(0x0a1230),
-        emissiveIntensity: 0.75,
-      });
-
-      const earth = new THREE.Mesh(
-        new THREE.SphereGeometry(R, lite ? 48 : 72, lite ? 32 : 48),
-        earthMaterial
-      );
-
-      // --- nubes (solo en calidad completa) ---
-      const clouds = new THREE.Mesh(
-        new THREE.SphereGeometry(R * 1.012, 48, 32),
-        new THREE.MeshPhongMaterial({
-          transparent: true,
-          opacity: lite ? 0 : 0.34,
-          color: 0xffffff,
-          depthWrite: false,
-        })
-      );
-      clouds.visible = !lite;
-
-      // --- atmósfera (interior + halo exterior) ---
-      const glow = createAtmosphere(R * 1.16, '#38BDF8', 3.0);
-      const halo = createAtmosphere(R * 1.42, '#818CF8', 4.2);
-      (halo.material as THREE.ShaderMaterial).uniforms.uIntensity.value = 0.45;
-
-      const markerGroup = new THREE.Group();
-      const arcGroup = new THREE.Group();
-
-      // el pivot agrupa todo lo que rota con el planeta
-      const pivot = new THREE.Group();
-      pivot.add(earth, clouds, markerGroup, arcGroup);
-      scene.add(pivot, glow, halo);
-
-      if (initial) {
-        const r = toRotation(initial.lat, initial.lng);
-        rot.current = { ...r };
-        target.current = { ...r };
-        if (initial.zoom) {
-          zoom.current = initial.zoom;
-          zoomTarget.current = initial.zoom;
-        }
-      }
-
-      sceneRef.current = {
-        renderer,
-        scene,
-        camera,
-        earth,
-        clouds,
-        pivot,
-        markerGroup,
-        arcGroup,
-        stars,
-        gl,
-      };
-
-      syncMarkers();
-      syncArc();
-      setLoading(false);
-      onReady?.();
-
-      // --- segunda fase: texturas grandes, ya con el globo girando en pantalla ---
-      const maxAniso = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
-      void (async () => {
-        try {
-          const earthTex = await loadTextureAsync(EARTH);
-          if (disposed.current) return;
-          earthTex.anisotropy = maxAniso;
-          earthMaterial.map = earthTex;
-          earthMaterial.needsUpdate = true;
-          lowTex.dispose();
-
-          if (lite) return;
-
-          const [specTex, cloudTex] = await Promise.all([
-            loadTextureAsync(SPEC, { srgb: false }),
-            loadTextureAsync(CLOUDS, { srgb: false }),
-          ]);
-          if (disposed.current) return;
-          earthMaterial.specularMap = specTex;
-          earthMaterial.needsUpdate = true;
-          const cloudMat = clouds.material as THREE.MeshPhongMaterial;
-          cloudMat.alphaMap = cloudTex;
-          cloudMat.needsUpdate = true;
-        } catch {
-          // Si falla la alta resolución nos quedamos con la pequeña: el globo sigue usable.
-        }
-      })();
-
-      const clock = new THREE.Clock();
-
-      const render = () => {
-        rafRef.current = requestAnimationFrame(render);
-        const dt = Math.min(0.05, clock.getDelta());
-        const elapsed = clock.elapsedTime;
-
-        // vuelo animado hacia un destino
-        if (flight.current) {
-          const f = flight.current;
-          f.t = Math.min(1, f.t + dt / f.dur);
-          const e = easeInOutCubic(f.t);
-          target.current.x = f.from.x + (f.to.x - f.from.x) * e;
-          target.current.y = f.from.y + (f.to.y - f.from.y) * e;
-          zoomTarget.current = f.from.z + (f.to.z - f.from.z) * e;
-          if (f.t >= 1) flight.current = null;
-        } else if (spinning.current && !dragging.current) {
-          target.current.y += dt * 0.085;
-        }
-
-        // inercia tras soltar el dedo
-        if (!dragging.current && !flight.current) {
-          target.current.x += vel.current.x * dt;
-          target.current.y += vel.current.y * dt;
-          vel.current.x *= 0.94;
-          vel.current.y *= 0.94;
-          if (Math.abs(vel.current.x) < 0.001) vel.current.x = 0;
-          if (Math.abs(vel.current.y) < 0.001) vel.current.y = 0;
-        }
-
-        target.current.x = clamp(target.current.x, -1.35, 1.35);
-
-        // amortiguación
-        rot.current.x += (target.current.x - rot.current.x) * Math.min(1, dt * 9);
-        rot.current.y += (target.current.y - rot.current.y) * Math.min(1, dt * 9);
-        zoom.current += (zoomTarget.current - zoom.current) * Math.min(1, dt * 8);
-
-        pivot.rotation.x = rot.current.x;
-        pivot.rotation.y = rot.current.y;
-        clouds.rotation.y += dt * 0.012;
-        stars.rotation.y -= dt * 0.006;
+        const camera = new THREE.PerspectiveCamera(
+          38,
+          gl.drawingBufferWidth / gl.drawingBufferHeight,
+          0.1,
+          200
+        );
         camera.position.set(0, 0, zoom.current);
-        camera.lookAt(0, 0, 0);
 
-        (stars.material as THREE.ShaderMaterial).uniforms.uTime.value = elapsed;
+        // --- luces ---
+        scene.add(new THREE.AmbientLight(0x8899ff, 0.55));
+        const sun = new THREE.DirectionalLight(0xfff4e0, 2.1);
+        sun.position.set(-3.2, 1.8, 2.4);
+        scene.add(sun);
+        const rim = new THREE.DirectionalLight(0x38bdf8, 0.9);
+        rim.position.set(3, -1.5, -2.5);
+        scene.add(rim);
 
-        // halos y anillos: tangentes a la superficie (mirando hacia afuera) + pulso
-        markerGroup.children.forEach((child) => {
-          const data = child.userData as { pulse?: boolean; billboard?: boolean };
-          if (data.pulse) {
-            const k = (elapsed * 0.8) % 1;
-            child.scale.setScalar(1 + k * 2.2);
-            const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-            mat.opacity = 0.85 * (1 - k);
+        const lite = quality === 'lite';
+
+        // --- estrellas ---
+        const stars = createStarfield(lite ? 420 : 900, 46);
+        scene.add(stars);
+
+        // --- tierra ---
+        // Las texturas se generan en memoria desde la máscara embebida y quedan
+        // cacheadas, así que esto es instantáneo salvo la primera vez (~50 ms).
+        const earthTex = getEarthTexture();
+        earthTex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
+
+        const earth = new THREE.Mesh(
+          new THREE.SphereGeometry(R, lite ? 48 : 72, lite ? 32 : 48),
+          new THREE.MeshPhongMaterial({
+            map: earthTex,
+            specularMap: lite ? null : getSpecularTexture(),
+            specular: new THREE.Color(0x4b6cb7),
+            shininess: 26,
+            emissive: new THREE.Color(0x0a1230),
+            emissiveIntensity: 0.75,
+          })
+        );
+
+        // --- nubes (solo en calidad completa) ---
+        const clouds = new THREE.Mesh(
+          new THREE.SphereGeometry(R * 1.012, 48, 32),
+          new THREE.MeshPhongMaterial({
+            alphaMap: lite ? null : getCloudTexture(),
+            transparent: true,
+            opacity: lite ? 0 : 0.34,
+            color: 0xffffff,
+            depthWrite: false,
+          })
+        );
+        clouds.visible = !lite;
+
+        // --- atmósfera (interior + halo exterior) ---
+        const glow = createAtmosphere(R * 1.16, '#38BDF8', 3.0);
+        const halo = createAtmosphere(R * 1.42, '#818CF8', 4.2);
+        (halo.material as THREE.ShaderMaterial).uniforms.uIntensity.value = 0.45;
+
+        const markerGroup = new THREE.Group();
+        const arcGroup = new THREE.Group();
+
+        // el pivot agrupa todo lo que rota con el planeta
+        const pivot = new THREE.Group();
+        pivot.add(earth, clouds, markerGroup, arcGroup);
+        scene.add(pivot, glow, halo);
+
+        if (initial) {
+          const r = toRotation(initial.lat, initial.lng);
+          rot.current = { ...r };
+          target.current = { ...r };
+          if (initial.zoom) {
+            zoom.current = initial.zoom;
+            zoomTarget.current = initial.zoom;
           }
-          if (data.billboard) child.lookAt(child.position.clone().multiplyScalar(3));
-        });
+        }
 
-        renderer.render(scene, camera);
-        gl.endFrameEXP();
-      };
-      render();
+        sceneRef.current = {
+          renderer,
+          scene,
+          camera,
+          earth,
+          clouds,
+          pivot,
+          markerGroup,
+          arcGroup,
+          stars,
+          gl,
+        };
+
+        syncMarkers();
+        syncArc();
+        setLoading(false);
+        onReady?.();
+
+        const clock = new THREE.Clock();
+
+        const render = () => {
+          rafRef.current = requestAnimationFrame(render);
+          const dt = Math.min(0.05, clock.getDelta());
+          const elapsed = clock.elapsedTime;
+
+          // vuelo animado hacia un destino
+          if (flight.current) {
+            const f = flight.current;
+            f.t = Math.min(1, f.t + dt / f.dur);
+            const e = easeInOutCubic(f.t);
+            target.current.x = f.from.x + (f.to.x - f.from.x) * e;
+            target.current.y = f.from.y + (f.to.y - f.from.y) * e;
+            zoomTarget.current = f.from.z + (f.to.z - f.from.z) * e;
+            if (f.t >= 1) flight.current = null;
+          } else if (spinning.current && !dragging.current) {
+            target.current.y += dt * 0.085;
+          }
+
+          // inercia tras soltar el dedo
+          if (!dragging.current && !flight.current) {
+            target.current.x += vel.current.x * dt;
+            target.current.y += vel.current.y * dt;
+            vel.current.x *= 0.94;
+            vel.current.y *= 0.94;
+            if (Math.abs(vel.current.x) < 0.001) vel.current.x = 0;
+            if (Math.abs(vel.current.y) < 0.001) vel.current.y = 0;
+          }
+
+          target.current.x = clamp(target.current.x, -1.35, 1.35);
+
+          // amortiguación
+          rot.current.x += (target.current.x - rot.current.x) * Math.min(1, dt * 9);
+          rot.current.y += (target.current.y - rot.current.y) * Math.min(1, dt * 9);
+          zoom.current += (zoomTarget.current - zoom.current) * Math.min(1, dt * 8);
+
+          pivot.rotation.x = rot.current.x;
+          pivot.rotation.y = rot.current.y;
+          clouds.rotation.y += dt * 0.012;
+          stars.rotation.y -= dt * 0.006;
+          camera.position.set(0, 0, zoom.current);
+          camera.lookAt(0, 0, 0);
+
+          (stars.material as THREE.ShaderMaterial).uniforms.uTime.value = elapsed;
+
+          // halos y anillos: tangentes a la superficie (mirando hacia afuera) + pulso
+          markerGroup.children.forEach((child) => {
+            const data = child.userData as { pulse?: boolean; billboard?: boolean };
+            if (data.pulse) {
+              const k = (elapsed * 0.8) % 1;
+              child.scale.setScalar(1 + k * 2.2);
+              const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+              mat.opacity = 0.85 * (1 - k);
+            }
+            if (data.billboard) child.lookAt(child.position.clone().multiplyScalar(3));
+          });
+
+          renderer.render(scene, camera);
+          gl.endFrameEXP();
+        };
+        render();
+      } catch (err) {
+        // Si algo falla dejamos constancia y salimos del estado de carga, en vez
+        // de quedarnos con un spinner eterno.
+        console.error('[Globe] no se pudo inicializar la escena 3D:', err);
+        setFailed(true);
+        setLoading(false);
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
@@ -542,6 +525,11 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
             <ActivityIndicator color="#2DD4BF" />
           </View>
         )}
+        {failed && (
+          <View pointerEvents="none" style={styles.loader}>
+            <Text style={styles.errorText}>No se pudo cargar el globo 3D</Text>
+          </View>
+        )}
       </View>
     </GestureDetector>
   );
@@ -580,6 +568,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  errorText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   reticleWrap: {
     position: 'absolute',
