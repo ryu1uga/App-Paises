@@ -165,12 +165,35 @@ Estás en Expo Go. Instala la APK generada por EAS.
 **El globo sale en negro**
 La APK es anterior a la instalación de `expo-gl`. Recompila con `npm run build:preview`.
 
+**`THREE.WebGLRenderer: WebGL 1 is not supported since r163`**
+Falso positivo, ya resuelto en `src/globe/glHelpers.ts`. three comprueba
+`context instanceof WebGLRenderingContext` para rechazar WebGL 1; en un navegador
+`WebGL2RenderingContext` no hereda de `WebGLRenderingContext`, pero expo-gl 57 sí hizo
+que herede, así que un contexto de WebGL 2 válido daba positivo. La solución oculta ese
+global mientras se construye el renderer y lo restaura después, solo cuando el contexto
+expone de verdad la API de WebGL 2.
+
 **"Aplicación no instalada" al abrir el APK**
 Ya tienes instalada otra versión firmada con distinta clave. Desinstala la anterior primero.
 
 **`SDK location not found`** (solo builds locales)
-Falta `ANDROID_HOME`, o crea `android/local.properties` con:
-`sdk.dir=C\:\\Users\\ITLAB\\AppData\\Local\\Android\\Sdk`
+Falta `ANDROID_HOME`, o crea `android/local.properties` con barras normales:
+`sdk.dir=C:/Users/ITLAB/AppData/Local/Android/Sdk`
+Ojo: ese fichero se borra en cada `expo prebuild --clean`, así que mejor deja la
+variable de entorno puesta.
+
+**`WARNING: A restricted method in java.lang.System has been called`**
+Tu JDK es demasiado nuevo. Desde el 24, `System.load()` desde módulos sin nombre está
+restringido y JNA —que usa CMake— lo necesita, así que `configureCMakeDebug` falla.
+Apunta a un JDK 17 o 21, por ejemplo el que trae Android Studio:
+
+```bash
+setx JAVA_HOME "C:\Program Files\Android\Android Studio\jbr"
+# reabre la terminal, y luego:
+cd android && ./gradlew --stop && cd ..
+```
+
+El `--stop` es imprescindible: sin él Gradle reutiliza el daemon arrancado con el JDK viejo.
 
 **Gradle se queda sin memoria**
 En `android/gradle.properties`: `org.gradle.jvmargs=-Xmx4096m`

@@ -105,6 +105,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
 ) {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [errorInfo, setErrorInfo] = useState('');
   const sceneRef = useRef<SceneRefs | null>(null);
   const rafRef = useRef<number | null>(null);
   /** Tamaño del View en unidades lógicas (dp), necesario para el raycast del tap. */
@@ -142,7 +143,10 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   // deje el globo colgado en el spinner para siempre.
   const onContextCreate = useCallback(
     (gl: ExpoWebGLRenderingContext) => {
-      try {
+      // `safe` desactiva todo lo que puede fallar en drivers quisquillosos:
+      // shaders propios (estrellas y atmósfera) y mapas secundarios. Si el
+      // montaje completo revienta, se reintenta en este modo antes de rendirse.
+      const build = (safe: boolean) => {
         const renderer = createRenderer(gl);
         const scene = new THREE.Scene();
 
@@ -163,17 +167,22 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         rim.position.set(3, -1.5, -2.5);
         scene.add(rim);
 
-        const lite = quality === 'lite';
+        const lite = quality === 'lite' || safe;
 
         // --- estrellas ---
-        const stars = createStarfield(lite ? 420 : 900, 46);
+        const stars = safe
+          ? new THREE.Points(
+              new THREE.BufferGeometry(),
+              new THREE.PointsMaterial({ size: 1, color: 0xffffff })
+            )
+          : createStarfield(lite ? 420 : 900, 46);
         scene.add(stars);
 
         // --- tierra ---
         // Las texturas se generan en memoria desde la máscara embebida y quedan
         // cacheadas, así que esto es instantáneo salvo la primera vez (~50 ms).
         const earthTex = getEarthTexture();
-        earthTex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
+        if (!safe) earthTex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
 
         const earth = new THREE.Mesh(
           new THREE.SphereGeometry(R, lite ? 48 : 72, lite ? 32 : 48),
@@ -201,9 +210,9 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         clouds.visible = !lite;
 
         // --- atmósfera (interior + halo exterior) ---
-        const glow = createAtmosphere(R * 1.16, '#38BDF8', 3.0);
-        const halo = createAtmosphere(R * 1.42, '#818CF8', 4.2);
-        (halo.material as THREE.ShaderMaterial).uniforms.uIntensity.value = 0.45;
+        const glow = safe ? null : createAtmosphere(R * 1.16, '#38BDF8', 3.0);
+        const halo = safe ? null : createAtmosphere(R * 1.42, '#818CF8', 4.2);
+        if (halo) (halo.material as THREE.ShaderMaterial).uniforms.uIntensity.value = 0.45;
 
         const markerGroup = new THREE.Group();
         const arcGroup = new THREE.Group();
@@ -211,7 +220,9 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         // el pivot agrupa todo lo que rota con el planeta
         const pivot = new THREE.Group();
         pivot.add(earth, clouds, markerGroup, arcGroup);
-        scene.add(pivot, glow, halo);
+        scene.add(pivot);
+        if (glow) scene.add(glow);
+        if (halo) scene.add(halo);
 
         if (initial) {
           const r = toRotation(initial.lat, initial.lng);
@@ -285,7 +296,8 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           camera.position.set(0, 0, zoom.current);
           camera.lookAt(0, 0, 0);
 
-          (stars.material as THREE.ShaderMaterial).uniforms.uTime.value = elapsed;
+          const starMat = stars.material as THREE.ShaderMaterial;
+          if (starMat.uniforms?.uTime) starMat.uniforms.uTime.value = elapsed;
 
           // halos y anillos: tangentes a la superficie (mirando hacia afuera) + pulso
           markerGroup.children.forEach((child) => {
@@ -303,12 +315,32 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           gl.endFrameEXP();
         };
         render();
+      };
+
+      const describe = (err: unknown) =>
+        err instanceof Error ? `${err.message}` : String(err);
+
+      try {
+        build(false);
       } catch (err) {
-        // Si algo falla dejamos constancia y salimos del estado de carga, en vez
-        // de quedarnos con un spinner eterno.
-        console.error('[Globe] no se pudo inicializar la escena 3D:', err);
-        setFailed(true);
-        setLoading(false);
+        console.error('[Globe] fallo el montaje completo, reintentando en modo seguro:', err);
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        try {
+          build(true);
+          console.warn('[Globe] funcionando en modo seguro (sin shaders propios).');
+        } catch (err2) {
+          console.error('[Globe] tampoco funciona el modo seguro:', err2);
+          // Diagnóstico útil para saber qué soporta realmente el dispositivo.
+          let info = '';
+          try {
+            info = `\nGL: ${gl.getParameter(gl.VERSION)}\n${gl.getParameter(gl.RENDERER)}`;
+          } catch {
+            info = '';
+          }
+          setErrorInfo(`${describe(err)}${info}`);
+          setFailed(true);
+          setLoading(false);
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -526,8 +558,13 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           </View>
         )}
         {failed && (
-          <View pointerEvents="none" style={styles.loader}>
-            <Text style={styles.errorText}>No se pudo cargar el globo 3D</Text>
+          <View style={styles.loader}>
+            <Text style={styles.errorTitle}>No se pudo cargar el globo 3D</Text>
+            {!!errorInfo && (
+              <Text selectable style={styles.errorDetail}>
+                {errorInfo}
+              </Text>
+            )}
           </View>
         )}
       </View>
@@ -569,12 +606,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  errorText: {
+  errorTitle: {
     color: '#94A3B8',
     fontSize: 13,
     fontFamily: 'Inter_500Medium',
     textAlign: 'center',
     paddingHorizontal: 24,
+  },
+  errorDetail: {
+    color: '#FB7185',
+    fontSize: 10,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   reticleWrap: {
     position: 'absolute',

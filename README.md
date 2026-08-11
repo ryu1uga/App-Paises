@@ -57,6 +57,17 @@ Está construido a mano sobre `expo-gl` + `three.js`, sin depender de `expo-thre
 
 La correspondencia lat/lng ↔ posición 3D ↔ rotación de cámara está verificada numéricamente sobre 2520 coordenadas (error < 1e-13°).
 
+### Compatibilidad con expo-gl
+
+three r163+ rechaza contextos de WebGL 1 comprobando
+`context instanceof WebGLRenderingContext`. En un navegador `WebGL2RenderingContext` no
+hereda de `WebGLRenderingContext`, así que la comprobación solo salta con WebGL 1 real;
+pero expo-gl 57 sí hizo que herede —fiel a la letra de la especificación— y entonces un
+contexto de WebGL 2 perfectamente válido daba positivo y el globo no arrancaba.
+`createRenderer` oculta ese global mientras construye el renderer y lo restaura después,
+solo cuando el contexto expone de verdad `createVertexArray` y `texStorage2D`. En un
+dispositivo con WebGL 1 auténtico se deja que three falle, que es lo correcto.
+
 ### Rendimiento
 
 `onContextCreate` es **síncrono**: no hay ni un `await` entre crear el contexto GL y

@@ -21,19 +21,51 @@ export function makeFakeCanvas(gl: ExpoWebGLRenderingContext) {
   } as unknown as HTMLCanvasElement;
 }
 
+/** ¿El contexto expone de verdad la API de WebGL 2? */
+export function isWebGL2(gl: ExpoWebGLRenderingContext): boolean {
+  const ctx = gl as unknown as Record<string, unknown>;
+  return typeof ctx.createVertexArray === 'function' && typeof ctx.texStorage2D === 'function';
+}
+
 export function createRenderer(gl: ExpoWebGLRenderingContext): THREE.WebGLRenderer {
-  const renderer = new THREE.WebGLRenderer({
-    canvas: makeFakeCanvas(gl),
-    context: gl as unknown as WebGL2RenderingContext,
-    antialias: true,
-    alpha: true,
-    powerPreference: 'high-performance',
-  });
-  renderer.setPixelRatio(1);
-  renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight, false);
-  renderer.setClearColor(0x000000, 0);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  return renderer;
+  /*
+   * three r163+ rechaza contextos de WebGL 1 con esta comprobación:
+   *
+   *   if (typeof WebGLRenderingContext !== 'undefined' && context instanceof WebGLRenderingContext)
+   *     throw new Error('THREE.WebGLRenderer: WebGL 1 is not supported since r163.');
+   *
+   * En un navegador `WebGL2RenderingContext` NO hereda de `WebGLRenderingContext`,
+   * así que la comprobación solo salta con contextos de WebGL 1 de verdad. Pero
+   * expo-gl 57 sí hizo que herede, y entonces un contexto de WebGL 2 perfectamente
+   * válido da `instanceof WebGLRenderingContext === true` y three lo rechaza.
+   *
+   * Ocultamos el global mientras se construye el renderer —solo si el contexto
+   * es realmente WebGL 2— y lo restauramos justo después. En dispositivos que de
+   * verdad solo tengan WebGL 1 dejamos que three falle, que es lo correcto.
+   */
+  const globals = globalThis as Record<string, unknown>;
+  const hadGlobal = 'WebGLRenderingContext' in globals;
+  const saved = globals.WebGLRenderingContext;
+  const shouldMask = hadGlobal && isWebGL2(gl);
+
+  if (shouldMask) globals.WebGLRenderingContext = undefined;
+
+  try {
+    const renderer = new THREE.WebGLRenderer({
+      canvas: makeFakeCanvas(gl),
+      context: gl as unknown as WebGL2RenderingContext,
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance',
+    });
+    renderer.setPixelRatio(1);
+    renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight, false);
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    return renderer;
+  } finally {
+    if (shouldMask) globals.WebGLRenderingContext = saved;
+  }
 }
 
 /** Campo de estrellas procedural (posiciones + tamaños + tonos). */
