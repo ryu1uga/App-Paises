@@ -56,11 +56,61 @@ const mix = (a: RGB, b: RGB, k: number): RGB => [
   a[2] + (b[2] - a[2]) * k,
 ];
 
+const smoothstep = (e0: number, e1: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
 /** Ruido determinista barato, para que el mapa no se vea plano. */
 function hashNoise(x: number, y: number): number {
   let h = (x * 374761393 + y * 668265263) | 0;
   h = (h ^ (h >>> 13)) * 1274126177;
   return (((h ^ (h >>> 16)) >>> 0) % 1000) / 1000 - 0.5;
+}
+
+/**
+ * Cobertura suavizada de un rasgo binario, con un desenfoque de caja separable
+ * de 3 taps. Convierte el borde "escalonado" de la máscara en un degradado de
+ * 0 a 255, que es lo que permite dibujar costas y fronteras sin dientes de sierra.
+ */
+function coverage(mask: Uint8Array, test: (v: number) => boolean, passes = 1): Uint8Array {
+  const W = MASK_WIDTH;
+  const H = MASK_HEIGHT;
+  let src = new Uint8Array(W * H);
+  for (let i = 0; i < src.length; i++) src[i] = test(mask[i]) ? 255 : 0;
+
+  const tmp = new Uint8Array(W * H);
+  let out = new Uint8Array(W * H);
+
+  for (let p = 0; p < passes; p++) {
+    // horizontal (el mapa da la vuelta en longitud)
+    for (let y = 0; y < H; y++) {
+      const row = y * W;
+      for (let x = 0; x < W; x++) {
+        const l = src[row + (x === 0 ? W - 1 : x - 1)];
+        const r = src[row + (x === W - 1 ? 0 : x + 1)];
+        tmp[row + x] = (l + src[row + x] + r) / 3;
+      }
+    }
+
+    // vertical (los polos se repiten, no envuelven)
+    for (let y = 0; y < H; y++) {
+      const row = y * W;
+      const up = y === 0 ? row : row - W;
+      const dn = y === H - 1 ? row : row + W;
+      for (let x = 0; x < W; x++) {
+        out[row + x] = (tmp[up + x] + tmp[row + x] + tmp[dn + x]) / 3;
+      }
+    }
+
+    if (p < passes - 1) {
+      const swap = src;
+      src = out;
+      out = swap;
+    }
+  }
+
+  return out;
 }
 
 let earthTexture: THREE.DataTexture | null = null;
@@ -81,11 +131,11 @@ export function getEarthTexture(): THREE.DataTexture {
   const H = MASK_HEIGHT;
   const data = new Uint8Array(W * H * 4);
 
-  const isLand = (x: number, y: number) => {
-    if (y < 0 || y >= H) return false;
-    const xx = x < 0 ? x + W : x >= W ? x - W : x; // el mapa da la vuelta en longitud
-    return mask[y * W + xx] !== OCEAN;
-  };
+  // `landCov` decide el color; `glowCov` está más difuminada y solo sirve para
+  // que el halo de costa ocupe una banda visible en vez de un único píxel.
+  const landCov = coverage(mask, (v) => v !== OCEAN);
+  const glowCov = coverage(mask, (v) => v !== OCEAN, 2);
+  const borderCov = coverage(mask, (v) => v === BORDER);
 
   for (let y = 0; y < H; y++) {
     const t = y / (H - 1);
@@ -106,33 +156,33 @@ export function getEarthTexture(): THREE.DataTexture {
           : 0;
     if (iceK > 0) landColor = mix(landColor, ICE, iceK);
 
-    const gridLat = Math.abs(lat) <= 61 && Math.abs(((lat + 90) % 30) - 0) < 0.36;
+    const gridLat = Math.abs(lat) <= 61 && Math.abs((lat + 90) % 30) < 0.2;
     const flipped = H - 1 - y; // fila de destino
+    const row = y * W;
 
     for (let x = 0; x < W; x++) {
-      const v = mask[y * W + x];
-      let c: RGB;
+      const cov = landCov[row + x] / 255;
 
-      if (v === OCEAN) {
-        c = oceanColor;
-        // halo de costa: dos anillos alrededor de la tierra
-        if (isLand(x - 1, y) || isLand(x + 1, y) || isLand(x, y - 1) || isLand(x, y + 1)) {
-          c = mix(c, COAST, 0.62);
-        } else if (isLand(x - 2, y) || isLand(x + 2, y) || isLand(x, y - 2) || isLand(x, y + 2)) {
-          c = mix(c, COAST, 0.2);
-        } else {
-          const n = hashNoise(x, y) * 8;
-          c = [c[0] + n, c[1] + n, c[2] + n];
-        }
-      } else {
-        c = landColor;
-        const n = hashNoise(x, y) * 14;
-        c = [c[0] + n, c[1] + n, c[2] + n];
-        if (v === BORDER) c = mix(c, INK, 0.6);
-      }
+      // Transición suave océano → tierra: esto es lo que quita el borde dentado.
+      let c = mix(oceanColor, landColor, smoothstep(0.14, 0.74, cov));
 
-      // retícula muy tenue cada 30°
-      if (gridLat || Math.abs(((x / W) * 360) % 30) < 0.18) c = mix(c, GRID, 0.08);
+      // Halo de costa. El término nítido mantiene visibles islas de pocos píxeles;
+      // el difuminado añade el resplandor ancho alrededor de los continentes.
+      const sharp = 1 - Math.abs(cov * 2 - 1);
+      const wide = 1 - Math.abs((glowCov[row + x] / 255) * 2 - 1);
+      const edge = Math.max(sharp * 0.62, wide * wide * 0.5);
+      if (edge > 0.02) c = mix(c, COAST, edge);
+
+      // Grano fino, más marcado en tierra que en el agua.
+      const n = hashNoise(x, y) * (6 + cov * 9);
+      c = [c[0] + n, c[1] + n, c[2] + n];
+
+      // Fronteras: tinta oscura, también con cobertura suavizada.
+      const b = borderCov[row + x] / 255;
+      if (b > 0.02) c = mix(c, INK, b * 0.6);
+
+      // Retícula muy tenue cada 30°
+      if (gridLat || Math.abs(((x / W) * 360) % 30) < 0.1) c = mix(c, GRID, 0.07);
 
       const i = (flipped * W + x) * 4;
       data[i] = c[0] < 0 ? 0 : c[0] > 255 ? 255 : c[0];
@@ -188,8 +238,8 @@ export function getSpecularTexture(): THREE.DataTexture {
 export function getCloudTexture(): THREE.DataTexture {
   if (cloudTexture) return cloudTexture;
 
-  const W = 256;
-  const H = 128;
+  const W = 512;
+  const H = 256;
   const data = new Uint8Array(W * H * 4);
 
   // valor-ruido con interpolación suave, sumado en cuatro octavas

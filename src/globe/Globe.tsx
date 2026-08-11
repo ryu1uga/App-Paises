@@ -7,14 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as THREE from 'three';
 
@@ -32,6 +25,11 @@ import {
 const R = 1; // radio del globo en unidades de escena
 const MIN_ZOOM = 2.05;
 const MAX_ZOOM = 5.6;
+
+/** Factor de supermuestreo para el antialiasing. 1 lo desactiva. */
+const SUPERSAMPLING = 2;
+/** Tope de píxeles del buffer intermedio, para no penalizar a móviles modestos. */
+const MAX_SS_PIXELS = 5_000_000;
 
 export type GlobeMarker = {
   id: string;
@@ -86,6 +84,8 @@ type SceneRefs = {
   arcGroup: THREE.Group;
   stars: THREE.Points;
   gl: ExpoWebGLRenderingContext;
+  /** Buffer intermedio del supermuestreo, si está activo. */
+  target: THREE.WebGLRenderTarget | null;
 };
 
 export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
@@ -104,8 +104,6 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   ref
 ) {
   const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const [errorInfo, setErrorInfo] = useState('');
   const sceneRef = useRef<SceneRefs | null>(null);
   const rafRef = useRef<number | null>(null);
   /** Tamaño del View en unidades lógicas (dp), necesario para el raycast del tap. */
@@ -185,7 +183,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         if (!safe) earthTex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
 
         const earth = new THREE.Mesh(
-          new THREE.SphereGeometry(R, lite ? 48 : 72, lite ? 32 : 48),
+          new THREE.SphereGeometry(R, lite ? 72 : 128, lite ? 48 : 96),
           new THREE.MeshPhongMaterial({
             map: earthTex,
             specularMap: lite ? null : getSpecularTexture(),
@@ -198,7 +196,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
 
         // --- nubes (solo en calidad completa) ---
         const clouds = new THREE.Mesh(
-          new THREE.SphereGeometry(R * 1.012, 48, 32),
+          new THREE.SphereGeometry(R * 1.012, 72, 48),
           new THREE.MeshPhongMaterial({
             alphaMap: lite ? null : getCloudTexture(),
             transparent: true,
@@ -245,7 +243,61 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           arcGroup,
           stars,
           gl,
+          target: null,
         };
+
+        /*
+         * Antialiasing por supermuestreo.
+         *
+         * `GLView` solo acepta `msaaSamples` en iOS, y al renderer se le pasa un
+         * contexto ya creado, así que su opción `antialias` no tiene efecto: el
+         * borde del planeta saldría dentado. Renderamos entonces a una textura de
+         * el doble de lado y la reducimos con filtrado bilineal, que al escalar
+         * exactamente a la mitad promedia bloques de 2×2 — equivale a 4× de MSAA
+         * y solo usa funciones básicas de WebGL.
+         */
+        const bufferW = gl.drawingBufferWidth;
+        const bufferH = gl.drawingBufferHeight;
+        let superSample: {
+          target: THREE.WebGLRenderTarget;
+          scene: THREE.Scene;
+          camera: THREE.OrthographicCamera;
+        } | null = null;
+
+        if (!safe && SUPERSAMPLING > 1) {
+          // Techo de píxeles para no ahogar a los móviles de gama media.
+          const scale = Math.min(
+            SUPERSAMPLING,
+            Math.max(1, Math.sqrt(MAX_SS_PIXELS / (bufferW * bufferH)))
+          );
+          if (scale > 1.05) {
+            const target = new THREE.WebGLRenderTarget(
+              Math.floor(bufferW * scale),
+              Math.floor(bufferH * scale),
+              { depthBuffer: true, stencilBuffer: false }
+            );
+            target.texture.colorSpace = THREE.SRGBColorSpace;
+            target.texture.minFilter = THREE.LinearFilter;
+            target.texture.magFilter = THREE.LinearFilter;
+            target.texture.generateMipmaps = false;
+
+            const quadScene = new THREE.Scene();
+            const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            quadScene.add(
+              new THREE.Mesh(
+                new THREE.PlaneGeometry(2, 2),
+                new THREE.MeshBasicMaterial({
+                  map: target.texture,
+                  transparent: true,
+                  depthTest: false,
+                  depthWrite: false,
+                })
+              )
+            );
+            superSample = { target, scene: quadScene, camera: quadCamera };
+            if (sceneRef.current) sceneRef.current.target = target;
+          }
+        }
 
         syncMarkers();
         syncArc();
@@ -311,14 +363,20 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
             if (data.billboard) child.lookAt(child.position.clone().multiplyScalar(3));
           });
 
-          renderer.render(scene, camera);
+          if (superSample) {
+            renderer.setRenderTarget(superSample.target);
+            renderer.clear();
+            renderer.render(scene, camera);
+            renderer.setRenderTarget(null);
+            renderer.clear();
+            renderer.render(superSample.scene, superSample.camera);
+          } else {
+            renderer.render(scene, camera);
+          }
           gl.endFrameEXP();
         };
         render();
       };
-
-      const describe = (err: unknown) =>
-        err instanceof Error ? `${err.message}` : String(err);
 
       try {
         build(false);
@@ -330,15 +388,6 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           console.warn('[Globe] funcionando en modo seguro (sin shaders propios).');
         } catch (err2) {
           console.error('[Globe] tampoco funciona el modo seguro:', err2);
-          // Diagnóstico útil para saber qué soporta realmente el dispositivo.
-          let info = '';
-          try {
-            info = `\nGL: ${gl.getParameter(gl.VERSION)}\n${gl.getParameter(gl.RENDERER)}`;
-          } catch {
-            info = '';
-          }
-          setErrorInfo(`${describe(err)}${info}`);
-          setFailed(true);
           setLoading(false);
         }
       }
@@ -429,6 +478,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
       const s = sceneRef.current;
       if (s) {
         disposeObject(s.scene);
+        s.target?.dispose();
         s.renderer.dispose();
       }
       sceneRef.current = null;
@@ -557,16 +607,6 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
             <ActivityIndicator color="#2DD4BF" />
           </View>
         )}
-        {failed && (
-          <View style={styles.loader}>
-            <Text style={styles.errorTitle}>No se pudo cargar el globo 3D</Text>
-            {!!errorInfo && (
-              <Text selectable style={styles.errorDetail}>
-                {errorInfo}
-              </Text>
-            )}
-          </View>
-        )}
       </View>
     </GestureDetector>
   );
@@ -605,20 +645,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  errorTitle: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontFamily: 'Inter_500Medium',
-    textAlign: 'center',
-    paddingHorizontal: 24,
-  },
-  errorDetail: {
-    color: '#FB7185',
-    fontSize: 10,
-    marginTop: 8,
-    textAlign: 'center',
-    paddingHorizontal: 20,
   },
   reticleWrap: {
     position: 'absolute',
