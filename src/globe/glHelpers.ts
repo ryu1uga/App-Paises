@@ -172,6 +172,68 @@ export function createAtmosphere(radius: number, color = '#38BDF8', power = 2.6)
   return new THREE.Mesh(new THREE.SphereGeometry(radius, 64, 48), material);
 }
 
+const smoothstep = (e0: number, e1: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+
+let dotTexture: THREE.DataTexture | null = null;
+
+/**
+ * Textura del marcador: un círculo relleno con un borde algo más oscuro, que le
+ * da contraste sobre terreno claro. El color real lo pone el color de instancia,
+ * así que aquí solo definimos forma y sombreado.
+ */
+function getDotTexture(): THREE.DataTexture {
+  if (dotTexture) return dotTexture;
+
+  const S = 64;
+  const data = new Uint8Array(S * S * 4);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const dx = ((x + 0.5) / S) * 2 - 1;
+      const dy = ((y + 0.5) / S) * 2 - 1;
+      const d = Math.hypot(dx, dy);
+      const i = (y * S + x) * 4;
+      const shade = 1 - smoothstep(0.55, 0.82, d) * 0.55;
+      const v = Math.round(255 * shade);
+      data[i] = data[i + 1] = data[i + 2] = v;
+      data[i + 3] = Math.round(255 * (1 - smoothstep(0.84, 1, d)));
+    }
+  }
+
+  const tex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat, THREE.UnsignedByteType);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  dotTexture = tex;
+  return tex;
+}
+
+/**
+ * Marcadores seleccionables sobre la superficie.
+ *
+ * Son discos apoyados en la esfera —su normal apunta hacia afuera desde el
+ * centro del globo— dibujados con `InstancedMesh`: cientos de marcadores en una
+ * sola llamada de dibujo. Al ir pegados a la superficie, cerca del borde del
+ * planeta se escorzan de forma natural en vez de quedar cortados por la mitad,
+ * que es lo que pasa con los sprites de `THREE.Points`.
+ */
+export function createPinField(capacity: number): THREE.InstancedMesh {
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const material = new THREE.MeshBasicMaterial({
+    map: getDotTexture(),
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+  });
+
+  const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, capacity));
+  mesh.frustumCulled = false;
+  mesh.count = 0;
+  return mesh;
+}
+
 /** Anillo plano orientado hacia la cámara, usado como pulso del marcador. */
 export function createPulseRing(color = '#FBBF24'): THREE.Mesh {
   const geometry = new THREE.RingGeometry(0.045, 0.055, 48);

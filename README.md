@@ -26,7 +26,7 @@ Para iterar con recarga en caliente hay un perfil `development`; todo está en
 | **Banderas** | Muestra una bandera, eliges el país entre 4 opciones |
 | **Bandera inversa** | Muestra el país, eliges su bandera |
 | **Capitales** | Muestra el país, eliges su capital |
-| **Ubicación** | Giras el globo y tocas dentro de las fronteras del país |
+| **Ubicación** | Los 195 países aparecen como puntos y eliges el que te piden |
 | **Explorar** | Globo libre + buscador + ficha completa de cada país |
 
 Cada modo se puede filtrar por continente y elegir 8, 12, 20 o 30 preguntas.
@@ -70,23 +70,31 @@ contexto de WebGL 2 perfectamente válido daba positivo y el globo no arrancaba.
 solo cuando el contexto expone de verdad `createVertexArray` y `texStorage2D`. En un
 dispositivo con WebGL 1 auténtico se deja que three falle, que es lo correcto.
 
-### Acierto por fronteras
+### Modo ubicación
 
-El modo "ubicar" no puntúa por cercanía: acierta si el marcador cae **dentro** del país.
-Para resolverlo sin llevar polígonos ni hacer point-in-polygon en tiempo real, hay una
-segunda rejilla embebida de 2048×1024 —52 KB— donde cada byte dice qué país ocupa ese
-píxel. Un toque se traduce a coordenadas de rejilla y se lee el índice directamente.
+Los **195 países** están siempre en el globo como puntos idénticos, y tú buscas el que te
+piden. Es un test de geografía, no de pulso.
 
-Detalles que hacen justo el veredicto:
+- Cada marcador es un **disco apoyado en la superficie**, con su normal apuntando hacia
+  afuera desde el centro del globo. Así, cerca del borde del planeta se escorzan de forma
+  natural en vez de quedar cortados por la mitad, que es lo que ocurre con los sprites
+  planos de `THREE.Points`: al tener un único valor de profundidad, la esfera recorta
+  medio punto.
+- Los 195 se dibujan con `InstancedMesh`: **una sola llamada de dibujo**, dos triángulos
+  por marcador. El color va por instancia, así que resaltar el acierto no reconstruye nada.
+- La selección no intersecta los discos —son diminutos— sino que busca el marcador más
+  cercano al punto tocado midiendo sobre la esfera. El umbral va ligado al zoom, de modo
+  que el área de toque es constante en pantalla: al acercarse se separan países vecinos
+  que de lejos se solapan.
+- **Responder son dos pasos**: tocar marca el punto en azul y confirmar lo evalúa. Así un
+  toque involuntario al arrastrar el globo no cuesta la pregunta; se puede rectificar
+  cuantas veces haga falta antes de confirmar.
+- Entre pregunta y pregunta la cámara **no se mueve**: encuadrar el país sería revelarlo.
+  Al fallar sí vuela hasta él para enseñarte dónde estaba.
 
-- Se admite un margen de 2 píxeles alrededor del toque, para no castigar el pulso en
-  costas y fronteras finas.
-- 14 países son más pequeños que un píxel (Mónaco, Malta, Maldivas…). Para ellos se
-  guarda su *alcance* real —la distancia del centroide a su punto más lejano— y se acepta
-  el acierto por proximidad. La superficie no serviría: Maldivas son 300 km² repartidos en
-  cientos de kilómetros de atolones.
-- Cuando fallas, la app te dice en qué país caíste ("Eso es Bolivia") y a qué distancia y
-  rumbo quedaba el correcto.
+La rejilla de fronteras de 2048×1024 —52 KB, cada byte dice qué país ocupa ese píxel—
+sirve a **Explorar**: al tocar el globo se sabe con exactitud qué país hay bajo el dedo,
+en vez de aproximar por el centroide más cercano.
 
 ### Rendimiento
 

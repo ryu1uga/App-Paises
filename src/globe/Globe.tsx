@@ -16,6 +16,7 @@ import { getCloudTexture, getEarthTexture, getSpecularTexture } from './earthTex
 import {
   createArc,
   createAtmosphere,
+  createPinField,
   createPulseRing,
   createRenderer,
   createStarfield,
@@ -25,6 +26,18 @@ import {
 const R = 1; // radio del globo en unidades de escena
 const MIN_ZOOM = 2.05;
 const MAX_ZOOM = 5.6;
+
+/** Color de los puntos seleccionables mientras no se destaquen. */
+const DEFAULT_PIN_COLOR = '#FBBF24';
+/** Diámetro del disco en unidades del globo (radio 1). */
+const PIN_SIZE = 0.024;
+/** Los destacados se dibujan algo mayores. */
+const PIN_SIZE_HIGHLIGHT = 0.04;
+/**
+ * Radio de toque de un marcador, en radianes por unidad de zoom. Multiplicado
+ * por el zoom actual mantiene constante el área de toque en pantalla.
+ */
+const PIN_TAP_ANGLE = 0.018;
 
 /** Factor de supermuestreo para el antialiasing. 1 lo desactiva. */
 const SUPERSAMPLING = 2;
@@ -39,6 +52,8 @@ export type GlobeMarker = {
   /** 'pin' clava un alfiler, 'pulse' añade además un anillo animado */
   kind?: 'pin' | 'pulse';
   label?: string;
+  /** Permite tocarlo para elegirlo (dispara `onSelectMarker`). */
+  selectable?: boolean;
 };
 
 export type GlobeHandle = {
@@ -62,6 +77,16 @@ type Props = {
   initial?: { lat: number; lng: number; zoom?: number };
   /** Se dispara al tocar el globo (coordenada de la superficie). */
   onPickPoint?: (p: { lat: number; lng: number }) => void;
+  /** Se dispara al tocar un marcador marcado como `selectable`. */
+  onSelectMarker?: (id: string) => void;
+  /**
+   * Nube de puntos seleccionables (pensada para cientos de ellos: se dibuja
+   * entera en una sola llamada). El color por defecto se puede sobreescribir
+   * por id con `pinColors`.
+   */
+  pins?: { id: string; lat: number; lng: number }[];
+  pinColors?: Record<string, string>;
+  onSelectPin?: (id: string) => void;
   /** Muestra el retículo central (modo "ubicar" con puntería). */
   showReticle?: boolean;
   onReady?: () => void;
@@ -82,6 +107,9 @@ type SceneRefs = {
   pivot: THREE.Group;
   markerGroup: THREE.Group;
   arcGroup: THREE.Group;
+  /** Discos seleccionables sobre la superficie, e ids en el orden de sus instancias. */
+  pinField: THREE.InstancedMesh | null;
+  pinIds: string[];
   stars: THREE.Points;
   gl: ExpoWebGLRenderingContext;
   /** Buffer intermedio del supermuestreo, si está activo. */
@@ -97,6 +125,10 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
     interactive = true,
     initial,
     onPickPoint,
+    onSelectMarker,
+    pins,
+    pinColors,
+    onSelectPin,
     showReticle = false,
     onReady,
     quality = 'full',
@@ -110,6 +142,9 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   const layout = useRef({ width: 1, height: 1 });
   /** Evita tocar la escena si el componente se desmonta mientras cargan las texturas. */
   const disposed = useRef(false);
+  /** Marcadores actuales, accesibles desde el gesto sin cerrar sobre props viejas. */
+  const pinsRef = useRef<{ id: string; lat: number; lng: number }[]>([]);
+  pinsRef.current = pins ?? [];
 
   // rotación objetivo (con amortiguación) y velocidad inercial
   const rot = useRef({ x: 0, y: 0 });
@@ -127,12 +162,26 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   } | null>(null);
 
   const markersKey = useMemo(
-    () => markers.map((m) => `${m.id}:${m.lat}:${m.lng}:${m.color}:${m.kind}`).join('|'),
+    () =>
+      markers
+        .map((m) => `${m.id}:${m.lat}:${m.lng}:${m.color}:${m.kind}:${m.selectable ? 1 : 0}`)
+        .join('|'),
     [markers]
   );
   const arcKey = useMemo(
     () => (arc ? `${arc.from.lat},${arc.from.lng}>${arc.to.lat},${arc.to.lng}:${arc.color}` : ''),
     [arc]
+  );
+  const pinsKey = useMemo(() => (pins ?? []).map((p) => p.id).join('|'), [pins]);
+  const pinColorsKey = useMemo(
+    () =>
+      pinColors
+        ? Object.keys(pinColors)
+            .sort()
+            .map((k) => `${k}:${pinColors[k]}`)
+            .join('|')
+        : '',
+    [pinColors]
   );
 
   /* ---------------- construcción de la escena ---------------- */
@@ -214,10 +263,11 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
 
         const markerGroup = new THREE.Group();
         const arcGroup = new THREE.Group();
+        const pinField = createPinField(Math.max(1, pins?.length ?? 0));
 
         // el pivot agrupa todo lo que rota con el planeta
         const pivot = new THREE.Group();
-        pivot.add(earth, clouds, markerGroup, arcGroup);
+        pivot.add(earth, clouds, markerGroup, arcGroup, pinField);
         scene.add(pivot);
         if (glow) scene.add(glow);
         if (halo) scene.add(halo);
@@ -241,6 +291,8 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           pivot,
           markerGroup,
           arcGroup,
+          pinField,
+          pinIds: [],
           stars,
           gl,
           target: null,
@@ -301,6 +353,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
 
         syncMarkers();
         syncArc();
+        syncPins();
         setLoading(false);
         onReady?.();
 
@@ -443,8 +496,64 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         ring.userData = { pulse: true, billboard: true };
         s.markerGroup.add(ring);
       }
+
+      // Zona de toque: una esfera invisible bastante más grande que el punto,
+      // para que sea cómoda de pulsar con el dedo sin agrandar el marcador.
+      if (m.selectable) {
+        const hitArea = new THREE.Mesh(
+          new THREE.SphereGeometry(0.075, 12, 8),
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+        );
+        hitArea.position.copy(pos);
+        hitArea.userData = { markerId: m.id };
+        s.markerGroup.add(hitArea);
+      }
     }
   }, [markers]);
+
+  const syncPins = useCallback(() => {
+    const s = sceneRef.current;
+    if (!s) return;
+
+    const list = pins ?? [];
+
+    // Si crece el número de marcadores hay que rehacer la malla: la capacidad de
+    // un InstancedMesh es fija.
+    if (!s.pinField || s.pinField.instanceMatrix.count < list.length) {
+      if (s.pinField) {
+        s.pivot.remove(s.pinField);
+        disposeObject(s.pinField);
+      }
+      s.pinField = createPinField(Math.max(1, list.length));
+      s.pivot.add(s.pinField);
+    }
+
+    const mesh = s.pinField;
+    const dummy = new THREE.Object3D();
+    const outward = new THREE.Vector3(0, 0, 1);
+    const tint = new THREE.Color();
+
+    list.forEach((pin, i) => {
+      const normal = latLngToVector3(pin.lat, pin.lng, 1).normalize();
+      // El disco se apoya en la superficie: su normal sale del centro del globo.
+      dummy.position.copy(normal).multiplyScalar(R * 1.006);
+      dummy.quaternion.setFromUnitVectors(outward, normal);
+      const highlighted = !!pinColors?.[pin.id];
+      const scale = highlighted ? PIN_SIZE_HIGHLIGHT : PIN_SIZE;
+      dummy.scale.set(scale, scale, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+
+      tint.set(pinColors?.[pin.id] ?? DEFAULT_PIN_COLOR);
+      mesh.setColorAt(i, tint);
+    });
+
+    mesh.count = list.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.visible = list.length > 0;
+    s.pinIds = list.map((p) => p.id);
+  }, [pins, pinColors]);
 
   const syncArc = useCallback(() => {
     const s = sceneRef.current;
@@ -466,6 +575,11 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
     syncArc();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arcKey]);
+
+  React.useEffect(() => {
+    syncPins();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinsKey, pinColorsKey]);
 
   React.useEffect(() => {
     spinning.current = autoRotate;
@@ -557,22 +671,62 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   const tap = useMemo(
     () =>
       Gesture.Tap()
-        .enabled(!!onPickPoint)
+        .enabled(!!onPickPoint || !!onSelectMarker || !!onSelectPin)
         .maxDuration(260)
         .onEnd((e) => {
           const s = sceneRef.current;
-          if (!s || !onPickPoint) return;
+          if (!s) return;
           const { width, height } = layout.current;
           const ndc = new THREE.Vector2((e.x / width) * 2 - 1, -(e.y / height) * 2 + 1);
           const raycaster = new THREE.Raycaster();
           raycaster.setFromCamera(ndc, s.camera);
-          const hits = raycaster.intersectObject(s.earth, false);
-          if (!hits.length) return;
-          const local = s.earth.worldToLocal(hits[0].point.clone());
-          onPickPoint(vector3ToLatLng(local));
+
+          const earthHit = raycaster.intersectObject(s.earth, false)[0];
+
+          if (onSelectPin && earthHit && s.pinField?.visible) {
+            // Buscamos el marcador más cercano al punto tocado midiendo sobre la
+            // esfera. Es más robusto que intersectar discos diminutos y, al ir
+            // el umbral ligado al zoom, el área de toque es constante en pantalla.
+            const local = s.earth.worldToLocal(earthHit.point.clone()).normalize();
+            const limit = Math.cos(PIN_TAP_ANGLE * zoom.current);
+            let bestId: string | null = null;
+            let bestDot = limit;
+
+            const list = pinsRef.current;
+            for (let i = 0; i < list.length; i++) {
+              const pin = list[i];
+              const d = latLngToVector3(pin.lat, pin.lng, 1).normalize().dot(local);
+              if (d > bestDot) {
+                bestDot = d;
+                bestId = pin.id;
+              }
+            }
+
+            if (bestId) {
+              onSelectPin(bestId);
+              return;
+            }
+          }
+
+          if (onSelectMarker) {
+            const marker = raycaster
+              .intersectObjects(s.markerGroup.children, false)
+              .find((hit) => hit.object.userData?.markerId);
+            // Solo cuenta si está delante del planeta: los del otro lado quedan
+            // ocultos por la esfera y no deberían poder tocarse.
+            if (marker && (!earthHit || marker.distance <= earthHit.distance + 0.02)) {
+              onSelectMarker(marker.object.userData.markerId as string);
+              return;
+            }
+          }
+
+          if (onPickPoint && earthHit) {
+            const local = s.earth.worldToLocal(earthHit.point.clone());
+            onPickPoint(vector3ToLatLng(local));
+          }
         })
         .runOnJS(true),
-    [onPickPoint]
+    [onPickPoint, onSelectMarker, onSelectPin]
   );
 
   const gesture = useMemo(

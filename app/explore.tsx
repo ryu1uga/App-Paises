@@ -22,6 +22,7 @@ import {
   type Country,
 } from '@/data/countries';
 import { Globe, type GlobeHandle, type GlobeMarker } from '@/globe/Globe';
+import { countryNear } from '@/lib/locate';
 import { isMastered, useProgress } from '@/store/progress';
 import { colors, radius, regionColors, spacing, type } from '@/theme/theme';
 
@@ -77,17 +78,10 @@ export default function Explore() {
           markers={markers}
           initial={{ lat: 20, lng: 0, zoom: 3.2 }}
           onPickPoint={(p) => {
-            // Selecciona el país cuyo centro esté más cerca del punto tocado.
-            let best: Country | null = null;
-            let bestD = Infinity;
-            for (const c of countries) {
-              const d = (c.lat - p.lat) ** 2 + ((c.lng - p.lng) * Math.cos((p.lat * Math.PI) / 180)) ** 2;
-              if (d < bestD) {
-                bestD = d;
-                best = c;
-              }
-            }
-            if (best) setSelected(best);
+            // La rejilla de fronteras dice exactamente qué país hay bajo el dedo;
+            // si el toque cae en mar abierto no cambiamos la selección.
+            const hit = countryNear(p);
+            if (hit) setSelected(hit);
           }}
         />
         <LinearGradient

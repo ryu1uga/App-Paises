@@ -90,11 +90,9 @@ export function buildQuiz(config: QuizConfig): Question[] {
   const targets = pickTargets(pool, Math.min(config.length, pool.length));
 
   return targets.map((target) => {
+    // En "ubicar" el globo muestra los 195 países, así que no hay distractores.
     if (config.mode === 'locate') return { target, options: [] };
-    return {
-      target,
-      options: shuffle([target, ...distractors(target, pool, 3)]),
-    };
+    return { target, options: shuffle([target, ...distractors(target, pool, 3)]) };
   });
 }
 
@@ -125,7 +123,7 @@ export const MODE_META: Record<
   },
   locate: {
     title: 'Ubicación',
-    subtitle: 'Toca dentro de sus fronteras',
+    subtitle: 'Encuéntralo entre los 195 puntos',
     icon: 'navigate',
     gradient: ['#2DD4BF', '#38BDF8'],
     route: '/game/locate',

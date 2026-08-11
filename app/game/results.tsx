@@ -137,8 +137,8 @@ export default function Results() {
                         <Text style={[type.small, { color: colors.textFaint }]}>
                           {session.mode === 'capitals'
                             ? `Capital: ${c.capital}`
-                            : a.distanceKm != null
-                              ? `Te quedaste a ${formatDistance(a.distanceKm)}`
+                            : a.given && byId[a.given]
+                              ? `Elegiste ${byId[a.given].nameEs}`
                               : c.subregion}
                         </Text>
                       </View>
