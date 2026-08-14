@@ -213,9 +213,21 @@ alinea las versiones con el SDK.
 Debe estar en `devDependencies` del proyecto, no solo dentro de `expo/node_modules`.
 Ya viene declarado; si desaparece, `npm i -D babel-preset-expo`.
 
-**`expo doctor` falla en el build de EAS**
-Es un paso obligatorio del build, así que cualquier fallo lo aborta. Los dos motivos
-habituales:
+**`expo doctor` avisa de "patch version mismatches"**
+No es un problema del proyecto: Expo publica parches con frecuencia y ese check compara
+siempre contra el último. Se realinea con un comando, que además actualiza el lockfile:
+
+```bash
+npx expo install --fix
+```
+
+Conviene ejecutarlo antes de cada build. Ojo con un detalle que despista: aunque
+`package.json` use rangos `~`, el `package-lock.json` fija la versión exacta, así que un
+`npm install` a secas no siempre trae el parche nuevo.
+
+**`expo doctor` falla y aborta el build de EAS**
+Cuando el fallo es de esquema o de peers —no de parches— sí detiene el build. Los dos
+motivos habituales:
 
 - *should NOT have additional property X* — el esquema de `app.json` cambió entre SDKs.
   En el 57 desaparecieron `newArchEnabled` y `android.edgeToEdgeEnabled`, porque la nueva
