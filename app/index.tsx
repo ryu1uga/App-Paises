@@ -43,11 +43,16 @@ export default function Home() {
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={[type.label, { color: colors.primary }]}>ATLAS QUEST</Text>
-              <Text style={[type.hero, { color: colors.text, marginTop: 4 }]}>
+              <Text style={[type.hero, { color: colors.text, marginTop: 4 }]} maxFontSizeMultiplier={1.3}>
                 Explora{'\n'}el mundo
               </Text>
             </View>
-            <Pressable onPress={() => router.push('/profile')} style={styles.avatar}>
+            <Pressable
+              onPress={() => router.push('/profile')}
+              style={styles.avatar}
+              accessibilityRole="button"
+              accessibilityLabel={`Tu perfil. Nivel ${level.level}`}
+            >
               <LinearGradient
                 colors={gradients.aurora as unknown as [string, string, string]}
                 style={StyleSheet.absoluteFill}
@@ -59,7 +64,11 @@ export default function Home() {
 
         {/* Globo destacado */}
         <Reveal delay={80} from="scale">
-          <Pressable onPress={() => router.push('/explore')}>
+          <Pressable
+            onPress={() => router.push('/explore')}
+            accessibilityRole="button"
+            accessibilityLabel={`Modo Explorar. Gira el planeta y descubre ${TOTAL_COUNTRIES} países`}
+          >
             <View style={styles.globeCard}>
               <Globe
                 style={StyleSheet.absoluteFill}
@@ -151,7 +160,12 @@ function MiniStat({ value, label, color = colors.primary }: { value: string; lab
 function ModeCard({ mode, onPress }: { mode: GameMode; onPress: () => void }) {
   const meta = MODE_META[mode];
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.modeCard, pressed && { opacity: 0.8 }]}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.modeCard, pressed && { opacity: 0.8 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`${meta.title}. ${meta.subtitle}`}
+    >
       <LinearGradient
         colors={[`${meta.gradient[0]}2E`, `${meta.gradient[1]}12`]}
         start={{ x: 0, y: 0 }}

@@ -56,11 +56,6 @@ export function getCountry(id: string | undefined): Country | undefined {
   return id ? byId[id] : undefined;
 }
 
-/** URL de la bandera en alta calidad (flagcdn usa códigos alfa-2 en minúsculas). */
-export function flagUrl(code: string, width: 80 | 160 | 320 | 640 = 320): string {
-  return `https://flagcdn.com/w${width}/${code.toLowerCase()}.png`;
-}
-
 /** Normaliza texto para comparaciones tolerantes (sin tildes, minúsculas). */
 export function normalize(s: string): string {
   return s

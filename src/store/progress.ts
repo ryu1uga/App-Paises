@@ -3,15 +3,10 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { byId, TOTAL_COUNTRIES } from '@/data/countries';
+import { isMastered, type StatsMap } from '@/lib/mastery';
 import type { GameMode } from '@/lib/quiz';
 
-/** Estadística acumulada por país. */
-export type CountryStat = {
-  seen: number;
-  correct: number;
-  /** timestamp del último acierto */
-  lastCorrect: number | null;
-};
+export type { CountryStat } from '@/lib/mastery';
 
 export type RunResult = {
   mode: GameMode;
@@ -31,7 +26,7 @@ type State = {
   bestStreak: number;
   /** YYYY-MM-DD del último día jugado */
   lastPlayed: string | null;
-  stats: Record<string, CountryStat>;
+  stats: StatsMap;
   history: RunResult[];
   hydrated: boolean;
 
@@ -86,11 +81,7 @@ export function levelTitle(level: number): string {
   return LEVEL_TITLES[Math.min(LEVEL_TITLES.length - 1, Math.floor((level - 1) / 3))];
 }
 
-/** Un país se considera "dominado" con 3 aciertos y ≥70 % de precisión. */
-export function isMastered(stat?: CountryStat): boolean {
-  if (!stat) return false;
-  return stat.correct >= 3 && stat.correct / Math.max(1, stat.seen) >= 0.7;
-}
+export { isMastered } from '@/lib/mastery';
 
 export const useProgress = create<State>()(
   persist(
@@ -168,13 +159,13 @@ export const useProgress = create<State>()(
 /* Selectores derivados                                                */
 /* ------------------------------------------------------------------ */
 
-export function selectMastered(stats: Record<string, CountryStat>): string[] {
+export function selectMastered(stats: StatsMap): string[] {
   return Object.entries(stats)
     .filter(([, st]) => isMastered(st))
     .map(([id]) => id);
 }
 
-export function selectAccuracy(stats: Record<string, CountryStat>): number {
+export function selectAccuracy(stats: StatsMap): number {
   const vals = Object.values(stats);
   const seen = vals.reduce((a, s) => a + s.seen, 0);
   const correct = vals.reduce((a, s) => a + s.correct, 0);
@@ -182,7 +173,7 @@ export function selectAccuracy(stats: Record<string, CountryStat>): number {
 }
 
 export function selectRegionProgress(
-  stats: Record<string, CountryStat>
+  stats: StatsMap
 ): { region: string; mastered: number; total: number; ratio: number }[] {
   const totals: Record<string, number> = {};
   const done: Record<string, number> = {};
@@ -203,7 +194,7 @@ export function selectRegionProgress(
 }
 
 /** Países más fallados, para el bloque "sigue practicando". */
-export function selectWeakest(stats: Record<string, CountryStat>, n = 6): string[] {
+export function selectWeakest(stats: StatsMap, n = 6): string[] {
   return Object.entries(stats)
     .filter(([, s]) => s.seen >= 2 && s.correct / s.seen < 0.6)
     .sort((a, b) => a[1].correct / a[1].seen - b[1].correct / b[1].seen)

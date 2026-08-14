@@ -32,8 +32,10 @@ export default function Play() {
   const streak = useSession((s) => s.streak);
   const registerAnswer = useProgress((s) => s.registerAnswer);
 
+  // Las estadísticas se leen una sola vez, al montar: así la ronda se sortea con
+  // repetición espaciada sin que las respuestas la vayan alterando sobre la marcha.
   const [questions] = React.useState<Question[]>(() =>
-    buildQuiz({ mode, region, length })
+    buildQuiz({ mode, region, length, stats: useProgress.getState().stats })
   );
   const [index, setIndex] = React.useState(0);
   const [picked, setPicked] = React.useState<string | null>(null);
@@ -100,7 +102,12 @@ export default function Play() {
     <Screen>
       <View style={{ flex: 1, padding: spacing.xl, gap: spacing.lg }}>
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.replace('/')} style={styles.iconBtn}>
+          <Pressable
+            onPress={() => router.replace('/')}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Salir de la partida"
+          >
             <Ionicons name="close" size={20} color={colors.text} />
           </Pressable>
           <View style={{ flex: 1 }}>
@@ -118,13 +125,16 @@ export default function Play() {
             <GlassCard padding={0} accent={meta.gradient} borderRadius={radius.xl}>
               <View style={styles.prompt}>
                 {isFlagQuestion ? (
-                  <Flag code={q.target.code} emoji={q.target.flag} width={210} rounded={radius.md} />
+                  <Flag id={q.target.id} width={210} rounded={radius.md} />
                 ) : (
                   <>
                     <Text style={[type.label, { color: colors.textFaint }]}>
                       {isReverse ? '¿CUÁL ES SU BANDERA?' : '¿CUÁL ES LA CAPITAL DE?'}
                     </Text>
-                    <Text style={[type.hero, { color: colors.text, textAlign: 'center', marginTop: 8 }]}>
+                    <Text
+                      style={[type.hero, { color: colors.text, textAlign: 'center', marginTop: 8 }]}
+                      maxFontSizeMultiplier={1.4}
+                    >
                       {q.target.nameEs}
                     </Text>
                     <Text style={[type.small, { color: colors.textDim, marginTop: 6 }]}>
@@ -154,7 +164,7 @@ export default function Play() {
                 disabled={!!picked}
                 leading={
                   isReverse ? (
-                    <Flag code={option.code} emoji={option.flag} width={54} />
+                    <Flag id={option.id} width={54} />
                   ) : (
                     <View style={styles.bullet}>
                       <Text style={[type.bodyStrong, { color: colors.textDim }]}>

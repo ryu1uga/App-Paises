@@ -247,31 +247,6 @@ export function createPulseRing(color = '#FBBF24'): THREE.Mesh {
   return new THREE.Mesh(geometry, material);
 }
 
-/** Arco geodésico entre dos puntos de la esfera (para conectar respuesta y objetivo). */
-export function createArc(
-  from: THREE.Vector3,
-  to: THREE.Vector3,
-  color = '#FBBF24',
-  lift = 0.35
-): THREE.Line {
-  const points: THREE.Vector3[] = [];
-  const steps = 64;
-  const angle = from.angleTo(to);
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const p = new THREE.Vector3().copy(from).lerp(to, t).normalize();
-    const bulge = 1 + Math.sin(Math.PI * t) * lift * Math.min(1, angle / Math.PI);
-    points.push(p.multiplyScalar(from.length() * bulge));
-  }
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({
-    color: new THREE.Color(color),
-    transparent: true,
-    opacity: 0.95,
-  });
-  return new THREE.Line(geometry, material);
-}
-
 export function disposeObject(root: THREE.Object3D) {
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;

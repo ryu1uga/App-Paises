@@ -35,7 +35,7 @@ export default function Locate() {
 
   const globe = React.useRef<GlobeHandle>(null);
   const [questions] = React.useState<Question[]>(() =>
-    buildQuiz({ mode: 'locate', region, length })
+    buildQuiz({ mode: 'locate', region, length, stats: useProgress.getState().stats })
   );
   const [index, setIndex] = React.useState(0);
   /** Marcador elegido pero aún sin confirmar. */
@@ -134,7 +134,12 @@ export default function Locate() {
 
         {/* Cabecera */}
         <View style={styles.header}>
-          <Pressable onPress={() => router.replace('/')} style={styles.iconBtn}>
+          <Pressable
+            onPress={() => router.replace('/')}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Salir de la partida"
+          >
             <Ionicons name="close" size={20} color={colors.text} />
           </Pressable>
           <View style={{ flex: 1, gap: 6 }}>
@@ -153,7 +158,9 @@ export default function Locate() {
         <Reveal trigger={index} from="top" style={styles.questionWrap}>
           <GlassCard padding={16} accent={gradients.ocean} borderRadius={radius.lg}>
             <Text style={[type.label, { color: colors.textFaint }]}>ENCUENTRA EL PUNTO DE</Text>
-            <Text style={[type.h1, { color: colors.text, marginTop: 4 }]}>{target.nameEs}</Text>
+            <Text style={[type.h1, { color: colors.text, marginTop: 4 }]} maxFontSizeMultiplier={1.4}>
+              {target.nameEs}
+            </Text>
             <Text style={[type.small, { color: colors.textDim, marginTop: 2 }]}>
               {target.region} · {target.subregion}
             </Text>

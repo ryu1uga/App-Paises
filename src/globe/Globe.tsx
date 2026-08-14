@@ -14,7 +14,6 @@ import * as THREE from 'three';
 import { latLngToVector3, vector3ToLatLng } from '@/lib/geo';
 import { getCloudTexture, getEarthTexture, getSpecularTexture } from './earthTexture';
 import {
-  createArc,
   createAtmosphere,
   createPinField,
   createPulseRing,
@@ -67,8 +66,6 @@ export type GlobeHandle = {
 type Props = {
   style?: StyleProp<ViewStyle>;
   markers?: GlobeMarker[];
-  /** Arco entre dos puntos (respuesta → objetivo). */
-  arc?: { from: { lat: number; lng: number }; to: { lat: number; lng: number }; color?: string } | null;
   /** Rotación automática cuando no se está tocando. */
   autoRotate?: boolean;
   /** Permite girar y hacer zoom. */
@@ -106,7 +103,6 @@ type SceneRefs = {
   clouds: THREE.Mesh;
   pivot: THREE.Group;
   markerGroup: THREE.Group;
-  arcGroup: THREE.Group;
   /** Discos seleccionables sobre la superficie, e ids en el orden de sus instancias. */
   pinField: THREE.InstancedMesh | null;
   pinIds: string[];
@@ -120,7 +116,6 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
   {
     style,
     markers = [],
-    arc = null,
     autoRotate = true,
     interactive = true,
     initial,
@@ -167,10 +162,6 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         .map((m) => `${m.id}:${m.lat}:${m.lng}:${m.color}:${m.kind}:${m.selectable ? 1 : 0}`)
         .join('|'),
     [markers]
-  );
-  const arcKey = useMemo(
-    () => (arc ? `${arc.from.lat},${arc.from.lng}>${arc.to.lat},${arc.to.lng}:${arc.color}` : ''),
-    [arc]
   );
   const pinsKey = useMemo(() => (pins ?? []).map((p) => p.id).join('|'), [pins]);
   const pinColorsKey = useMemo(
@@ -262,12 +253,11 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         if (halo) (halo.material as THREE.ShaderMaterial).uniforms.uIntensity.value = 0.45;
 
         const markerGroup = new THREE.Group();
-        const arcGroup = new THREE.Group();
         const pinField = createPinField(Math.max(1, pins?.length ?? 0));
 
         // el pivot agrupa todo lo que rota con el planeta
         const pivot = new THREE.Group();
-        pivot.add(earth, clouds, markerGroup, arcGroup, pinField);
+        pivot.add(earth, clouds, markerGroup, pinField);
         scene.add(pivot);
         if (glow) scene.add(glow);
         if (halo) scene.add(halo);
@@ -290,7 +280,6 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           clouds,
           pivot,
           markerGroup,
-          arcGroup,
           pinField,
           pinIds: [],
           stars,
@@ -352,7 +341,6 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         }
 
         syncMarkers();
-        syncArc();
         syncPins();
         setLoading(false);
         onReady?.();
@@ -449,7 +437,7 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
     []
   );
 
-  /* ---------------- marcadores y arcos ---------------- */
+  /* ---------------- marcadores ---------------- */
 
   const syncMarkers = useCallback(() => {
     const s = sceneRef.current;
@@ -555,26 +543,10 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
     s.pinIds = list.map((p) => p.id);
   }, [pins, pinColors]);
 
-  const syncArc = useCallback(() => {
-    const s = sceneRef.current;
-    if (!s) return;
-    disposeObject(s.arcGroup);
-    s.arcGroup.clear();
-    if (!arc) return;
-    const from = latLngToVector3(arc.from.lat, arc.from.lng, R * 1.01);
-    const to = latLngToVector3(arc.to.lat, arc.to.lng, R * 1.01);
-    s.arcGroup.add(createArc(from, to, arc.color ?? '#FBBF24'));
-  }, [arc]);
-
   React.useEffect(() => {
     syncMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [markersKey]);
-
-  React.useEffect(() => {
-    syncArc();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arcKey]);
 
   React.useEffect(() => {
     syncPins();

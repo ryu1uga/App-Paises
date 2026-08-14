@@ -55,39 +55,6 @@ export function formatDistance(km: number): string {
   return `${(km / 1000).toFixed(1)} mil km`;
 }
 
-/**
- * Encuadre para un grupo de puntos sobre la esfera: devuelve el centro y el zoom
- * mínimo que los deja a todos dentro del casquete visible.
- *
- * A distancia `z` del centro de una esfera de radio 1, se ve un casquete de
- * semiángulo `acos(1/z)`; despejando obtenemos el zoom necesario.
- */
-export function frameFor(
-  points: { lat: number; lng: number }[],
-  opts: { margin?: number; min?: number; max?: number } = {}
-): { lat: number; lng: number; zoom: number } {
-  const { margin = 0.38, min = 2.3, max = 5.2 } = opts;
-  if (points.length === 0) return { lat: 0, lng: 0, zoom: 3.2 };
-
-  const vectors = points.map((p) => latLngToVector3(p.lat, p.lng, 1));
-  const center = vectors
-    .reduce((acc, v) => acc.add(v), new THREE.Vector3())
-    .divideScalar(points.length);
-
-  // Si los puntos están repartidos por todo el globo el promedio tiende a cero;
-  // en ese caso nos quedamos con el primero como referencia.
-  if (center.lengthSq() < 1e-6) center.copy(vectors[0]);
-  center.normalize();
-
-  let maxAngle = 0;
-  for (const v of vectors) maxAngle = Math.max(maxAngle, center.angleTo(v));
-
-  const half = Math.min(maxAngle + margin, 1.45);
-  const zoom = Math.min(max, Math.max(min, 1 / Math.cos(half)));
-
-  return { ...vector3ToLatLng(center), zoom };
-}
-
 /** Rumbo aproximado de a → b, en texto ("noreste", "sur"…). */
 export function bearingLabel(
   a: { lat: number; lng: number },

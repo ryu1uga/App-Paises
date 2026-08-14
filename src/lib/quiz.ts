@@ -1,4 +1,5 @@
 import { Country, countries, countriesOf } from '@/data/countries';
+import { reviewWeight, type StatsMap } from './mastery';
 
 export type GameMode = 'flags' | 'capitals' | 'locate' | 'flagsReverse';
 
@@ -12,6 +13,11 @@ export type QuizConfig = {
   mode: GameMode;
   region: string | null;
   length: number;
+  /**
+   * Historial del jugador. Si se pasa, las preguntas se sortean con repetición
+   * espaciada; si no, el reparto es el de siempre por tramos de dificultad.
+   */
+  stats?: StatsMap;
 };
 
 export function shuffle<T>(arr: readonly T[]): T[] {
@@ -58,36 +64,78 @@ function distractors(target: Country, pool: Country[], n: number): Country[] {
 }
 
 /**
- * Reparte las preguntas en una curva: empieza por países conocidos y sube
- * la dificultad hacia el final de la ronda.
+ * Sorteo ponderado sin reemplazo: elige `n` elementos donde la probabilidad de
+ * cada uno es proporcional a su peso.
  */
-function pickTargets(pool: Country[], length: number): Country[] {
-  const easy = pool.filter((c) => c.difficulty === 1);
-  const mid = pool.filter((c) => c.difficulty === 2);
-  const hard = pool.filter((c) => c.difficulty === 3);
+function weightedSample<T>(items: readonly T[], weights: number[], n: number): T[] {
+  const pending = items.map((item, i) => ({ item, weight: Math.max(0, weights[i]) }));
+  const out: T[] = [];
 
-  const nEasy = Math.round(length * 0.4);
-  const nMid = Math.round(length * 0.35);
-  const nHard = length - nEasy - nMid;
+  while (out.length < n && pending.length > 0) {
+    const total = pending.reduce((a, x) => a + x.weight, 0);
+    if (total <= 0) {
+      // Todos los pesos a cero: repartimos lo que quede al azar.
+      out.push(...sample(pending.map((p) => p.item), n - out.length));
+      break;
+    }
 
-  const chosen = [
-    ...sample(easy, Math.min(nEasy, easy.length)),
-    ...sample(mid, Math.min(nMid, mid.length)),
-    ...sample(hard, Math.min(nHard, hard.length)),
-  ];
+    let ticket = Math.random() * total;
+    let index = pending.length - 1;
+    for (let i = 0; i < pending.length; i++) {
+      ticket -= pending[i].weight;
+      if (ticket <= 0) {
+        index = i;
+        break;
+      }
+    }
 
-  // Si el continente elegido tiene pocos países, rellena con lo que haya.
-  if (chosen.length < length) {
-    const rest = pool.filter((c) => !chosen.some((x) => x.id === c.id));
-    chosen.push(...sample(rest, Math.min(length - chosen.length, rest.length)));
+    out.push(pending[index].item);
+    pending.splice(index, 1);
   }
 
-  return chosen.sort((a, b) => a.difficulty - b.difficulty).slice(0, length);
+  return out;
+}
+
+/**
+ * Elige los países de la ronda.
+ *
+ * Con historial aplica repetición espaciada: insiste en lo que fallas, saca lo
+ * que aún no has visto y deja descansar lo dominado. Sin historial reparte por
+ * tramos de dificultad. En ambos casos la ronda se ordena de fácil a difícil,
+ * para que empiece amable y suba.
+ */
+function pickTargets(pool: Country[], length: number, stats?: StatsMap): Country[] {
+  const size = Math.min(length, pool.length);
+  let chosen: Country[];
+
+  if (stats) {
+    const now = Date.now();
+    const weights = pool.map((c) => reviewWeight(c.difficulty, stats[c.id], now));
+    chosen = weightedSample(pool, weights, size);
+  } else {
+    const byTier = (d: 1 | 2 | 3) => pool.filter((c) => c.difficulty === d);
+    const nEasy = Math.round(length * 0.4);
+    const nMid = Math.round(length * 0.35);
+
+    chosen = [
+      ...sample(byTier(1), Math.min(nEasy, byTier(1).length)),
+      ...sample(byTier(2), Math.min(nMid, byTier(2).length)),
+      ...sample(byTier(3), Math.min(length - nEasy - nMid, byTier(3).length)),
+    ];
+
+    // Si el continente elegido tiene pocos países, rellena con lo que haya.
+    if (chosen.length < size) {
+      const rest = pool.filter((c) => !chosen.some((x) => x.id === c.id));
+      chosen.push(...sample(rest, size - chosen.length));
+    }
+  }
+
+  return chosen.slice(0, size).sort((a, b) => a.difficulty - b.difficulty);
 }
 
 export function buildQuiz(config: QuizConfig): Question[] {
   const pool = countriesOf(config.region);
-  const targets = pickTargets(pool, Math.min(config.length, pool.length));
+  const targets = pickTargets(pool, config.length, config.stats);
 
   return targets.map((target) => {
     // En "ubicar" el globo muestra los 195 países, así que no hay distractores.

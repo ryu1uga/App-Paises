@@ -45,7 +45,12 @@ export default function Profile() {
         contentContainerStyle={{ padding: spacing.xl, paddingBottom: 48, gap: spacing.lg }}
       >
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar"
+          >
             <Ionicons name="chevron-down" size={20} color={colors.text} />
           </Pressable>
           <Text style={[type.label, { color: colors.textFaint }]}>TU PROGRESO</Text>
@@ -135,8 +140,10 @@ export default function Profile() {
                       key={cid}
                       onPress={() => router.push({ pathname: '/country/[id]', params: { id: cid } })}
                       style={styles.weakChip}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${c.nameEs}. Ver ficha`}
                     >
-                      <Flag code={c.code} emoji={c.flag} width={26} rounded={5} />
+                      <Flag id={c.id} width={26} rounded={5} />
                       <Text style={[type.small, { color: colors.text }]} numberOfLines={1}>
                         {c.nameEs}
                       </Text>

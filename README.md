@@ -41,6 +41,17 @@ Cada modo se puede filtrar por continente y elegir 8, 12, 20 o 30 preguntas.
 
 Todo se guarda en el dispositivo con Zustand + AsyncStorage.
 
+### Repetición espaciada
+
+Las rondas no se sortean al azar: el historial pondera qué países salen
+(`src/lib/mastery.ts`). Insiste en lo que fallas —hasta el triple de probabilidad—,
+prioriza lo que nunca has visto y deja descansar lo dominado, que se recupera con los días.
+Sin historial, la primera partida reparte por tramos de dificultad.
+
+La dificultad tampoco sale del tamaño del país, que era un mal proxy: se estima por
+familiaridad, con sesgo hacia el público hispanohablante (`tools/difficulty.js`). Antes
+Kazajistán era "fácil" por enorme e Irlanda "difícil" por pequeña.
+
 ---
 
 ## El globo 3D
@@ -114,20 +125,44 @@ polígonos y menos estrellas.
 
 nombre ES/EN, nombre oficial, capital **en español**, ISO alfa-2/alfa-3, lat/lng, continente y subcontinente, emoji de bandera, población, superficie, si es interior, países vecinos, idiomas en español, moneda, año de independencia, esperanza de vida, temperatura media, plato típico y un nivel de dificultad 1–3.
 
-Las banderas se sirven en alta resolución desde flagcdn con caché en disco (`expo-image`), y caen al emoji si no hay red.
+Las **195 banderas van empaquetadas** en `assets/flags` (465 KB en total, ~2,4 KB cada una):
+sin red, sin latencia y sin depender de los emojis de bandera, que Android no dibuja.
+Cada una conserva su proporción real —Nepal no es rectangular, Suiza y el Vaticano son
+cuadradas— y el componente las encaja con `contain`. `tools/flags.js` las genera desde
+`svg-country-flags`, reduce a 240 px y cuantiza a paleta.
 
-### Regenerar el dataset y las texturas
+### Regenerar datos y assets
+
+Todo se genera desde la raíz del proyecto. Las dependencias van con `--no-save`: son de
+construcción, no de la app.
 
 ```bash
-cd tools
-npm i world-countries country-json world-atlas topojson-client d3-geo @napi-rs/canvas
-node gen.js && node enrich.js          # dataset
-node ../tools/finalize.js countries.json
-node masks.js && python3 texture.py    # texturas del globo (necesita Pillow)
-python3 icons.py                       # icono y splash
+npm i -D --no-save world-countries country-json world-atlas topojson-client \
+                   d3-geo @napi-rs/canvas svg-country-flags
+pip install pillow
+
+node tools/gen.js && node tools/enrich.js      # dataset base
+node tools/finalize.js src/data/countries.json # capitales y fronteras
+node tools/difficulty.js                       # dificultad por familiaridad
+node tools/country_grid.js 2048                # rejilla de fronteras
+node tools/flags.js                            # banderas empaquetadas
+node tools/masks.js && python3 tools/texture.py  # máscara del planeta
+python3 tools/icons.py                         # icono y splash
 ```
 
 ---
+
+## Tests
+
+```bash
+npm test
+```
+
+82 tests sobre la lógica pura, que es donde vive el riesgo: consistencia del dataset
+(195 países, fronteras que existen, capitales en español, banderas completas), la
+geometría del globo —ida y vuelta lat/lng ↔ esfera sobre 2520 coordenadas, y que la
+rotación deje el punto frente a la cámara—, el sorteo de preguntas y la repetición
+espaciada, la rejilla de fronteras, y la curva de niveles y rachas del store.
 
 ## Estructura
 
@@ -142,12 +177,13 @@ app/                    rutas de expo-router
   game/locate.tsx       ubicar en el globo
   game/results.tsx      resultados, subida de nivel, repaso
 src/
-  globe/                Globe.tsx + helpers de WebGL
+  globe/                Globe.tsx, helpers de WebGL y datos embebidos del planeta
   components/           Screen, GlassCard, botones, medidores, confeti…
-  data/                 dataset y utilidades de formato
-  lib/                  geo.ts (haversine, proyecciones) y quiz.ts
+  data/                 dataset, banderas empaquetadas y utilidades de formato
+  lib/                  geo.ts, quiz.ts, mastery.ts (repetición espaciada), locate.ts
   store/                progress.ts (persistente) y session.ts (ronda activa)
   theme/                paleta, tipografía, espaciado, degradados
+tests/                  suite de jest sobre la lógica pura
 tools/                  scripts de generación de datos y assets
 ```
 

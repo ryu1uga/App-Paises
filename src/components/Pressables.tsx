@@ -37,6 +37,8 @@ type ButtonProps = {
   style?: StyleProp<ViewStyle>;
   size?: 'md' | 'lg';
   haptic?: boolean;
+  /** Texto para lectores de pantalla si el visible no basta. */
+  accessibilityLabel?: string;
 };
 
 export function PrimaryButton({
@@ -48,9 +50,12 @@ export function PrimaryButton({
   style,
   size = 'lg',
   haptic = true,
+  accessibilityLabel,
 }: ButtonProps) {
   const press = usePressScale();
-  const height = size === 'lg' ? 56 : 46;
+  // `minHeight` en vez de `height`: con el texto grande del sistema el botón
+  // crece en lugar de recortar la etiqueta.
+  const minHeight = size === 'lg' ? 56 : 46;
 
   return (
     <AnimatedPressable
@@ -61,6 +66,9 @@ export function PrimaryButton({
         if (haptic) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         onPress();
       }}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: !!disabled }}
       style={[press.style, { opacity: disabled ? 0.45 : 1 }, style]}
     >
       <View style={[styles.btnShadow, shadow.glow(gradient[0])]}>
@@ -68,17 +76,29 @@ export function PrimaryButton({
           colors={gradient as unknown as [string, string]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.btn, { height, borderRadius: radius.pill }]}
+          style={[styles.btn, { minHeight, borderRadius: radius.pill }]}
         >
           {icon}
-          <Text style={[type.h3, styles.btnLabel, size === 'md' && { fontSize: 15 }]}>{label}</Text>
+          <Text
+            style={[type.h3, styles.btnLabel, size === 'md' && { fontSize: 15 }]}
+            maxFontSizeMultiplier={1.5}
+          >
+            {label}
+          </Text>
         </LinearGradient>
       </View>
     </AnimatedPressable>
   );
 }
 
-export function GhostButton({ label, onPress, icon, style, disabled }: ButtonProps) {
+export function GhostButton({
+  label,
+  onPress,
+  icon,
+  style,
+  disabled,
+  accessibilityLabel,
+}: ButtonProps) {
   const press = usePressScale(0.97);
   return (
     <AnimatedPressable
@@ -89,10 +109,15 @@ export function GhostButton({ label, onPress, icon, style, disabled }: ButtonPro
         void Haptics.selectionAsync();
         onPress();
       }}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: !!disabled }}
       style={[press.style, styles.ghost, { opacity: disabled ? 0.4 : 1 }, style]}
     >
       {icon}
-      <Text style={[type.bodyStrong, { color: colors.text }]}>{label}</Text>
+      <Text style={[type.bodyStrong, { color: colors.text }]} maxFontSizeMultiplier={1.5}>
+        {label}
+      </Text>
     </AnimatedPressable>
   );
 }
@@ -116,6 +141,14 @@ export function OptionButton({
   leading?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
+  // El color no puede ser el único canal: lo decimos también con palabras.
+  const spoken =
+    state === 'correct'
+      ? `${label}. Respuesta correcta`
+      : state === 'wrong'
+        ? `${label}. Respuesta incorrecta`
+        : label;
+
   const press = usePressScale(0.975);
   const progress = useSharedValue(0);
 
@@ -140,6 +173,9 @@ export function OptionButton({
       onPressIn={press.onPressIn}
       onPressOut={press.onPressOut}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={spoken}
+      accessibilityState={{ disabled: !!disabled }}
       style={[
         press.style,
         animated,
@@ -150,11 +186,19 @@ export function OptionButton({
     >
       {leading}
       <View style={{ flex: 1 }}>
-        <Text style={[type.bodyStrong, { color: palette.text }]} numberOfLines={2}>
+        <Text
+          style={[type.bodyStrong, { color: palette.text }]}
+          numberOfLines={3}
+          maxFontSizeMultiplier={1.6}
+        >
           {label}
         </Text>
         {!!sublabel && (
-          <Text style={[type.small, { color: colors.textFaint, marginTop: 2 }]} numberOfLines={1}>
+          <Text
+            style={[type.small, { color: colors.textFaint, marginTop: 2 }]}
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.4}
+          >
             {sublabel}
           </Text>
         )}
@@ -181,6 +225,9 @@ export function Chip({
         void Haptics.selectionAsync();
         onPress();
       }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: !!active }}
       style={[
         styles.chip,
         active && { backgroundColor: `${color}26`, borderColor: color },
@@ -213,7 +260,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    height: 48,
+    minHeight: 48,
+    paddingVertical: 10,
     paddingHorizontal: 22,
     borderRadius: radius.pill,
     borderWidth: 1,
@@ -232,7 +280,8 @@ const styles = StyleSheet.create({
   },
   chip: {
     paddingHorizontal: 14,
-    height: 34,
+    minHeight: 34,
+    paddingVertical: 6,
     justifyContent: 'center',
     borderRadius: radius.pill,
     borderWidth: 1,

@@ -1,4 +1,7 @@
 node_modules/
+# El patrón de arriba solo casa con directorios: si alguien enlaza las
+# dependencias de los scripts, el enlace se colaría en el commit.
+tools/node_modules
 .expo/
 dist/
 web-build/

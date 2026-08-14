@@ -80,13 +80,23 @@ export default function CountryDetail() {
             pointerEvents="none"
           />
           <View style={styles.heroTop}>
-            <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+            <Pressable
+              onPress={() => router.back()}
+              style={styles.iconBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Volver"
+            >
               <Ionicons name="chevron-back" size={20} color={colors.text} />
             </Pressable>
           </View>
           <View style={styles.heroBottom}>
-            <Flag code={country.code} emoji={country.flag} width={96} rounded={radius.md} />
-            <Text style={[type.hero, { color: colors.text, marginTop: 14 }]}>{country.nameEs}</Text>
+            <Flag id={country.id} name={country.nameEs} width={96} rounded={radius.md} />
+            <Text
+              style={[type.hero, { color: colors.text, marginTop: 14 }]}
+              maxFontSizeMultiplier={1.4}
+            >
+              {country.nameEs}
+            </Text>
             <Text style={[type.small, { color: colors.textDim }]}>{country.officialEs}</Text>
             <View style={[styles.regionTag, { backgroundColor: `${accent}22`, borderColor: `${accent}55` }]}>
               <Text style={[type.small, { color: accent, fontFamily: 'Inter_600SemiBold' }]}>
@@ -166,8 +176,10 @@ export default function CountryDetail() {
                     key={n.id}
                     onPress={() => router.push({ pathname: '/country/[id]', params: { id: n.id } })}
                     style={styles.neighbour}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${n.nameEs}. Ver ficha`}
                   >
-                    <Flag code={n.code} emoji={n.flag} width={30} rounded={6} />
+                    <Flag id={n.id} width={30} rounded={6} />
                     <Text style={[type.small, { color: colors.text }]} numberOfLines={1}>
                       {n.nameEs}
                     </Text>

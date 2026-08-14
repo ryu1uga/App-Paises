@@ -40,7 +40,12 @@ export default function Setup() {
         contentContainerStyle={{ padding: spacing.xl, paddingBottom: 40, gap: spacing.lg }}
       >
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Cancelar"
+          >
             <Ionicons name="close" size={20} color={colors.text} />
           </Pressable>
           <Text style={[type.label, { color: colors.textFaint }]}>NUEVA PARTIDA</Text>

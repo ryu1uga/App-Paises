@@ -96,7 +96,12 @@ export default function Explore() {
         />
 
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Volver"
+          >
             <Ionicons name="chevron-back" size={20} color={colors.text} />
           </Pressable>
           <Text style={[type.h3, { color: colors.text, flex: 1 }]}>Explorar</Text>
@@ -106,8 +111,10 @@ export default function Explore() {
           <Pressable
             onPress={() => router.push({ pathname: '/country/[id]', params: { id: selected.id } })}
             style={styles.selectedCard}
+            accessibilityRole="button"
+            accessibilityLabel={`${selected.nameEs}. Capital ${selected.capital}. Ver ficha`}
           >
-            <Flag code={selected.code} emoji={selected.flag} width={52} />
+            <Flag id={selected.id} width={52} />
             <View style={{ flex: 1 }}>
               <Text style={[type.h3, { color: colors.text }]} numberOfLines={1}>
                 {selected.nameEs}
@@ -199,9 +206,13 @@ function CountryRow({
     <Pressable
       onPress={onPress}
       onLongPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`${country.nameEs}. Capital ${country.capital}${mastered ? '. Dominado' : ''}`}
+      accessibilityHint="Toca para centrarlo en el globo, mantén pulsado para ver su ficha"
+      accessibilityState={{ selected: active }}
       style={[styles.row, active && { borderColor: colors.primary, backgroundColor: 'rgba(45,212,191,0.10)' }]}
     >
-      <Flag code={country.code} emoji={country.flag} width={44} />
+      <Flag id={country.id} width={44} />
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={[type.bodyStrong, { color: colors.text }]} numberOfLines={1}>
@@ -213,7 +224,13 @@ function CountryRow({
           {country.capital} · {country.subregion}
         </Text>
       </View>
-      <Pressable onPress={onOpen} hitSlop={10} style={styles.openBtn}>
+      <Pressable
+        onPress={onOpen}
+        hitSlop={10}
+        style={styles.openBtn}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver ficha de ${country.nameEs}`}
+      >
         <Ionicons name="information-circle-outline" size={18} color={colors.textDim} />
       </Pressable>
     </Pressable>

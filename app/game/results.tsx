@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Confetti } from '@/components/Confetti';
 import { Flag } from '@/components/Flag';
@@ -12,7 +12,6 @@ import { GhostButton, PrimaryButton } from '@/components/Pressables';
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import { byId } from '@/data/countries';
-import { formatDistance } from '@/lib/geo';
 import { MODE_META } from '@/lib/quiz';
 import { levelTitle, useProgress } from '@/store/progress';
 import { gradeFor, useSession } from '@/store/session';
@@ -129,21 +128,30 @@ export default function Results() {
                 {wrong.slice(0, 8).map((a) => {
                   const c = byId[a.countryId];
                   if (!c) return null;
+                  const detail =
+                    session.mode === 'capitals'
+                      ? `Capital: ${c.capital}`
+                      : a.given && byId[a.given]
+                        ? `Elegiste ${byId[a.given].nameEs}`
+                        : c.subregion;
+
                   return (
-                    <View key={a.countryId} style={styles.reviewRow}>
-                      <Flag code={c.code} emoji={c.flag} width={44} />
+                    <Pressable
+                      key={a.countryId}
+                      onPress={() =>
+                        router.push({ pathname: '/country/[id]', params: { id: c.id } })
+                      }
+                      style={({ pressed }) => [styles.reviewRow, pressed && styles.reviewRowPressed]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${c.nameEs}. ${detail}. Ver ficha del país`}
+                    >
+                      <Flag id={c.id} width={44} />
                       <View style={{ flex: 1 }}>
                         <Text style={[type.bodyStrong, { color: colors.text }]}>{c.nameEs}</Text>
-                        <Text style={[type.small, { color: colors.textFaint }]}>
-                          {session.mode === 'capitals'
-                            ? `Capital: ${c.capital}`
-                            : a.given && byId[a.given]
-                              ? `Elegiste ${byId[a.given].nameEs}`
-                              : c.subregion}
-                        </Text>
+                        <Text style={[type.small, { color: colors.textFaint }]}>{detail}</Text>
                       </View>
                       <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
-                    </View>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -199,5 +207,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(251,191,36,0.16)',
   },
-  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  reviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  reviewRowPressed: { backgroundColor: 'rgba(255,255,255,0.06)' },
 });
