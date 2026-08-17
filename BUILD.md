@@ -149,6 +149,7 @@ npm run build:preview   # APK autónoma (la de siempre)
 npm run build:dev       # APK con dev client para iterar
 npm start               # servidor de Metro
 npm run typecheck       # TypeScript sin emitir
+npm test                # suite de jest sobre la lógica pura
 npm run doctor          # diagnóstico de dependencias
 npx expo install --fix  # alinea versiones con el SDK
 npx expo start -c       # limpia caché de Metro
@@ -199,7 +200,9 @@ El `--stop` es imprescindible: sin él Gradle reutiliza el daemon arrancado con 
 En `android/gradle.properties`: `org.gradle.jvmargs=-Xmx4096m`
 
 **Las banderas no cargan**
-Vienen de `flagcdn.com`. Sin conexión se muestra el emoji de respaldo.
+Ya no vienen de la red: las 195 están empaquetadas en `assets/flags` (465 KB) y se
+resuelven con un `require` estático, así que funcionan sin conexión. Si falta alguna es que
+`src/data/flags.ts` está desincronizado del dataset; se regenera con `node tools/flags.js`.
 
 **Cambié dependencias y algo va raro**
 `npx expo start -c`; si persiste, `npx expo prebuild --clean` y recompila.
