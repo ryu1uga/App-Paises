@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { latLngToVector3, vector3ToLatLng } from '@/lib/geo';
 import { getCloudTexture, getEarthTexture, getSpecularTexture } from './earthTexture';
 import {
+  PULSE_RING_INNER,
   createAtmosphere,
   createPinField,
   createPulseRing,
@@ -37,6 +38,14 @@ const PIN_SIZE_HIGHLIGHT = 0.04;
  * por el zoom actual mantiene constante el área de toque en pantalla.
  */
 const PIN_TAP_ANGLE = 0.018;
+
+/** Hasta dónde crece el anillo del pulso, en unidades del globo (radio 1). */
+const PULSE_MAX_RADIUS = 0.2;
+/** Separación mínima respecto a la superficie, para evitar z-fighting. */
+const SURFACE_LIFT = 1.003;
+/** Normal de la geometría plana (`PlaneGeometry`, `CircleGeometry`, `RingGeometry`). */
+const PLANE_NORMAL = new THREE.Vector3(0, 0, 1);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 /** Factor de supermuestreo para el antialiasing. 1 lo desactiva. */
 const SUPERSAMPLING = 2;
@@ -392,16 +401,35 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           const starMat = stars.material as THREE.ShaderMaterial;
           if (starMat.uniforms?.uTime) starMat.uniforms.uTime.value = elapsed;
 
-          // halos y anillos: tangentes a la superficie (mirando hacia afuera) + pulso
+          /*
+           * Pulso del marcador.
+           *
+           * El anillo se dibuja como una circunferencia inscrita en la esfera:
+           * a radio `inner`, su plano queda a sqrt(R² − inner²) del centro y el
+           * borde interior se apoya exactamente en la superficie, así que toda
+           * la banda queda por fuera y la onda parece expandirse sobre el mapa
+           * en lugar de atravesarlo.
+           *
+           * La orientación no se toca aquí a propósito: se fijó al crear el
+           * marcador con la normal en coordenadas del pivot. (`lookAt` trabaja
+           * en coordenadas de mundo, así que aplicado a una posición local
+           * apuntaba a cualquier sitio en cuanto el globo giraba — de ahí que
+           * los aros salieran torcidos y cortaran la superficie.)
+           */
           markerGroup.children.forEach((child) => {
-            const data = child.userData as { pulse?: boolean; billboard?: boolean };
-            if (data.pulse) {
-              const k = (elapsed * 0.8) % 1;
-              child.scale.setScalar(1 + k * 2.2);
-              const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-              mat.opacity = 0.85 * (1 - k);
-            }
-            if (data.billboard) child.lookAt(child.position.clone().multiplyScalar(3));
+            const data = child.userData as { pulse?: boolean; normal?: THREE.Vector3 };
+            if (!data.pulse || !data.normal) return;
+
+            const k = (elapsed * 0.8) % 1;
+            const outer = Math.max(1e-4, PULSE_MAX_RADIUS * k);
+            const inner = outer * PULSE_RING_INNER;
+            child.scale.set(outer, outer, 1);
+            child.position
+              .copy(data.normal)
+              .multiplyScalar(Math.sqrt(Math.max(0, R * R - inner * inner)) * SURFACE_LIFT);
+
+            const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+            mat.opacity = 0.85 * (1 - k);
           });
 
           if (superSample) {
@@ -447,7 +475,10 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
 
     for (const m of markers) {
       const color = m.color ?? '#FBBF24';
-      const pos = latLngToVector3(m.lat, m.lng, R * 1.008);
+      // Normal de la superficie en ese punto: es la vertical local y la usan
+      // todas las piezas del marcador para quedar bien plantadas en el globo.
+      const normal = latLngToVector3(m.lat, m.lng, 1).normalize();
+      const pos = normal.clone().multiplyScalar(R * 1.008);
 
       const dot = new THREE.Mesh(
         new THREE.SphereGeometry(0.022, 16, 12),
@@ -461,10 +492,13 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
         new THREE.CylinderGeometry(0.004, 0.004, 0.09, 8),
         new THREE.MeshBasicMaterial({ color: new THREE.Color(color), transparent: true, opacity: 0.75 })
       );
-      stem.position.copy(latLngToVector3(m.lat, m.lng, R * 1.045));
-      stem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), pos.clone().normalize());
+      stem.position.copy(normal).multiplyScalar(R * 1.045);
+      stem.quaternion.setFromUnitVectors(Y_AXIS, normal);
       s.markerGroup.add(stem);
 
+      // Disco de fondo, tangente a la superficie. La orientación se fija aquí
+      // una sola vez: el marcador cuelga del pivot, así que gira con el planeta
+      // y su normal local nunca cambia.
       const halo = new THREE.Mesh(
         new THREE.CircleGeometry(0.05, 32),
         new THREE.MeshBasicMaterial({
@@ -474,14 +508,17 @@ export const Globe = forwardRef<GlobeHandle, Props>(function Globe(
           depthWrite: false,
         })
       );
-      halo.position.copy(latLngToVector3(m.lat, m.lng, R * 1.004));
-      halo.userData = { billboard: true };
+      halo.position.copy(normal).multiplyScalar(R * 1.004);
+      halo.quaternion.setFromUnitVectors(PLANE_NORMAL, normal);
       s.markerGroup.add(halo);
 
       if (m.kind === 'pulse') {
         const ring = createPulseRing(color);
-        ring.position.copy(latLngToVector3(m.lat, m.lng, R * 1.006));
-        ring.userData = { pulse: true, billboard: true };
+        ring.quaternion.setFromUnitVectors(PLANE_NORMAL, normal);
+        // Arranca cerrado; el bucle de render le da tamaño y profundidad.
+        ring.scale.set(1e-4, 1e-4, 1);
+        ring.position.copy(normal).multiplyScalar(R * SURFACE_LIFT);
+        ring.userData = { pulse: true, normal };
         s.markerGroup.add(ring);
       }
 
