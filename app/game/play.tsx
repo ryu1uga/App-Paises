@@ -14,11 +14,19 @@ import Animated, {
 import { Flag } from '@/components/Flag';
 import { GlassCard } from '@/components/GlassCard';
 import { QuizProgress } from '@/components/Meters';
-import { OptionButton } from '@/components/Pressables';
+import { FlagOption, OptionButton } from '@/components/Pressables';
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import type { Country } from '@/data/countries';
-import { buildQuiz, MODE_META, scoreAnswer, type GameMode, type Question } from '@/lib/quiz';
+import {
+  buildQuiz,
+  correction,
+  MODE_META,
+  optionLabel,
+  promptFor,
+  scoreAnswer,
+  type Question,
+} from '@/lib/quiz';
 import { useProgress } from '@/store/progress';
 import { useSession } from '@/store/session';
 import { colors, radius, spacing, type } from '@/theme/theme';
@@ -115,11 +123,12 @@ export default function Play() {
     return 'muted' as const;
   };
 
-  // Qué se enseña arriba y qué se enseña en los botones. Los tres modos
-  // "directos" preguntan por el país; los inversos parten del dato y piden el país.
-  const showsFlagPrompt = mode === 'flags';
-  const showsFlagOptions = mode === 'flagsReverse';
+  // Qué se enseña arriba y qué se enseña en los botones. Los modos "directos"
+  // preguntan por el país; los inversos parten del dato y piden el país.
   const prompt = promptFor(mode, q.target);
+  // Sin texto de enunciado, el enunciado es la bandera.
+  const showsFlagPrompt = prompt.subject === null;
+  const showsFlagOptions = mode === 'flagsReverse';
 
   return (
     <Screen>
@@ -173,31 +182,52 @@ export default function Play() {
           </Reveal>
         </Animated.View>
 
-        {/* Opciones */}
-        <View style={{ gap: 10, flex: 1 }}>
-          {q.options.map((option, i) => (
-            <Reveal key={`${index}-${option.id}`} delay={60 + i * 55} from="right">
-              <OptionButton
-                label={optionLabel(mode, option)}
-                sublabel={picked && option.id === q.target.id ? option.subregion : undefined}
-                state={stateFor(option)}
-                onPress={() => answer(option)}
-                disabled={!!picked}
-                leading={
-                  showsFlagOptions ? (
-                    <Flag id={option.id} width={54} />
-                  ) : (
+        {/* Opciones. Las banderas van en rejilla 2×2: puestas en columna se
+            comparan de dos en dos, y el juego es compararlas todas de un vistazo. */}
+        {showsFlagOptions ? (
+          <View style={styles.flagGrid}>
+            {q.options.map((option, i) => (
+              <Reveal
+                key={`${index}-${option.id}`}
+                delay={60 + i * 55}
+                from="scale"
+                style={styles.flagGridItem}
+              >
+                <FlagOption
+                  id={option.id}
+                  name={option.nameEs}
+                  position={i + 1}
+                  total={q.options.length}
+                  revealed={!!picked}
+                  state={stateFor(option)}
+                  onPress={() => answer(option)}
+                  disabled={!!picked}
+                />
+              </Reveal>
+            ))}
+          </View>
+        ) : (
+          <View style={{ gap: 10, flex: 1 }}>
+            {q.options.map((option, i) => (
+              <Reveal key={`${index}-${option.id}`} delay={60 + i * 55} from="right">
+                <OptionButton
+                  label={optionLabel(mode, option) ?? option.nameEs}
+                  sublabel={picked && option.id === q.target.id ? option.subregion : undefined}
+                  state={stateFor(option)}
+                  onPress={() => answer(option)}
+                  disabled={!!picked}
+                  leading={
                     <View style={styles.bullet}>
                       <Text style={[type.bodyStrong, { color: colors.textDim }]}>
                         {String.fromCharCode(65 + i)}
                       </Text>
                     </View>
-                  )
-                }
-              />
-            </Reveal>
-          ))}
-        </View>
+                  }
+                />
+              </Reveal>
+            ))}
+          </View>
+        )}
 
         {/* Aviso de respuesta correcta cuando se falla */}
         {picked && picked !== q.target.id && (
@@ -213,37 +243,6 @@ export default function Play() {
       </View>
     </Screen>
   );
-}
-
-/**
- * Qué se lee en el botón. Solo Capitales pide capitales; en su inverso las
- * capitales están arriba y los botones vuelven a ser países.
- */
-function optionLabel(mode: GameMode, c: Country): string {
-  return mode === 'capitals' ? c.capital : c.nameEs;
-}
-
-/** El enunciado: la pregunta y el dato del que se parte. */
-function promptFor(mode: GameMode, c: Country): { question: string; subject: string } {
-  switch (mode) {
-    case 'flags':
-      return { question: '¿DE QUÉ PAÍS ES ESTA BANDERA?', subject: c.nameEs };
-    case 'flagsReverse':
-      return { question: '¿CUÁL ES SU BANDERA?', subject: c.nameEs };
-    case 'capitals':
-      return { question: '¿CUÁL ES LA CAPITAL DE?', subject: c.nameEs };
-    case 'capitalsReverse':
-      return { question: '¿DE QUÉ PAÍS ES CAPITAL?', subject: c.capital };
-    default:
-      return { question: '¿QUÉ PAÍS ES?', subject: c.nameEs };
-  }
-}
-
-/** La aclaración que aparece al fallar, dicha en la dirección del modo. */
-function correction(mode: GameMode, c: Country): string {
-  if (mode === 'capitals') return `La capital de ${c.nameEs} es ${c.capital}.`;
-  if (mode === 'capitalsReverse') return `${c.capital} es la capital de ${c.nameEs}.`;
-  return `Era ${c.nameEs} · ${c.subregion}.`;
 }
 
 const styles = StyleSheet.create({
@@ -266,6 +265,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(251,191,36,0.14)',
   },
   prompt: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.lg },
+  flagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  flagGridItem: { width: '47.5%', flexGrow: 1 },
   bullet: {
     width: 34,
     height: 34,

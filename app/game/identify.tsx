@@ -19,7 +19,7 @@ import { Screen } from '@/components/Screen';
 import { countries, type Country } from '@/data/countries';
 import { Globe, type GlobeHandle, type GlobeMarker } from '@/globe/Globe';
 import { formatDistance, haversine } from '@/lib/geo';
-import { buildQuiz, MODE_META, scoreAnswer, type Question } from '@/lib/quiz';
+import { buildQuiz, MODE_META, promptFor, scoreAnswer, type Question } from '@/lib/quiz';
 import { useProgress } from '@/store/progress';
 import { useSession } from '@/store/session';
 import { colors, radius, spacing, type } from '@/theme/theme';
@@ -251,7 +251,7 @@ export default function Identify() {
           <View style={styles.promptRow}>
             <View style={styles.dotSample} />
             <Text style={[type.label, { color: colors.textFaint, flex: 1 }]}>
-              ¿QUÉ PAÍS ES EL PUNTO MARCADO?
+              {promptFor('locateReverse', target).question}
             </Text>
           </View>
 

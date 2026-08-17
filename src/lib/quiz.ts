@@ -299,6 +299,59 @@ export const MODE_META: Record<
   },
 };
 
+/* ------------------------------------------------------------------ */
+/* Enunciados                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Qué se lee en cada botón de respuesta, o `null` si la opción no es texto.
+ *
+ * En Bandera inversa la respuesta **es** la bandera: escribir al lado el nombre
+ * del país convertía la pregunta en un ejercicio de lectura. Devolver `null`
+ * dice que ese modo se pinta con imágenes, igual que `promptFor` lo dice del
+ * enunciado. Enunciado y opción nunca son texto a la vez sobre el mismo dato.
+ *
+ * Solo Capitales pide capitales; en su inverso están arriba, en el enunciado, y
+ * los botones vuelven a ser países.
+ */
+export function optionLabel(mode: GameMode, c: Country): string | null {
+  if (mode === 'flagsReverse') return null;
+  return mode === 'capitals' ? c.capital : c.nameEs;
+}
+
+/**
+ * El enunciado: la pregunta y el dato del que se parte.
+ *
+ * `subject` es `null` cuando el dato no es texto sino una imagen —la bandera en
+ * Banderas, el punto resaltado en Ubicación inversa—. Devolver ahí el nombre
+ * del país invitaba a pintarlo por error, que es justo el fallo que tuvo
+ * Bandera inversa: el enunciado y la respuesta no pueden ser lo mismo.
+ */
+export function promptFor(
+  mode: GameMode,
+  c: Country
+): { question: string; subject: string | null } {
+  switch (mode) {
+    case 'flags':
+      return { question: '¿DE QUÉ PAÍS ES ESTA BANDERA?', subject: null };
+    case 'flagsReverse':
+      return { question: '¿CUÁL ES SU BANDERA?', subject: c.nameEs };
+    case 'capitals':
+      return { question: '¿CUÁL ES LA CAPITAL DE?', subject: c.nameEs };
+    case 'capitalsReverse':
+      return { question: '¿DE QUÉ PAÍS ES CAPITAL?', subject: c.capital };
+    default:
+      return { question: '¿QUÉ PAÍS ES EL PUNTO MARCADO?', subject: null };
+  }
+}
+
+/** La aclaración que aparece al fallar, dicha en la dirección del modo. */
+export function correction(mode: GameMode, c: Country): string {
+  if (mode === 'capitals') return `La capital de ${c.nameEs} es ${c.capital}.`;
+  if (mode === 'capitalsReverse') return `${c.capital} es la capital de ${c.nameEs}.`;
+  return `Era ${c.nameEs} · ${c.subregion}.`;
+}
+
 /**
  * Cuánto tiempo tienes antes de perder todo el bonus de velocidad.
  *

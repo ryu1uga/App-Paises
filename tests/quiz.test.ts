@@ -1,9 +1,12 @@
-import { countries, countriesOf, regions } from '@/data/countries';
+import { byId, countries, countriesOf, regions } from '@/data/countries';
 import { GAME_MODES, reviewWeight, type StatsMap } from '@/lib/mastery';
 import {
   buildQuiz,
+  correction,
   isHomonymCapital,
   MODE_META,
+  optionLabel,
+  promptFor,
   scoreAnswer,
   type GameMode,
 } from '@/lib/quiz';
@@ -79,6 +82,61 @@ describe('buildQuiz', () => {
         expect(new Set(caps).size).toBe(caps.length);
       }
     }
+  });
+});
+
+describe('enunciados', () => {
+  const paisesBajos = byId.NLD;
+
+  it('bandera inversa no pone texto en los botones', () => {
+    // El fallo que había: la respuesta era la bandera, pero al lado ponía
+    // «Países Bajos». Se resolvía leyendo, sin mirar una sola bandera. Ahora
+    // las opciones son solo banderas, y el nombre lo revela la caja al fallar.
+    expect(optionLabel('flagsReverse', paisesBajos)).toBeNull();
+  });
+
+  it('los demás modos sí tienen texto en los botones', () => {
+    expect(optionLabel('flags', paisesBajos)).toBe(paisesBajos.nameEs);
+    expect(optionLabel('capitals', paisesBajos)).toBe(paisesBajos.capital);
+    expect(optionLabel('capitalsReverse', paisesBajos)).toBe(paisesBajos.nameEs);
+    expect(optionLabel('locateReverse', paisesBajos)).toBe(paisesBajos.nameEs);
+  });
+
+  it('ningún modo enseña en los botones lo mismo que en el enunciado', () => {
+    // La regla general: si el texto del botón repite el dato del enunciado, el
+    // modo es un ejercicio de lectura. Cuando uno de los dos lados es una
+    // imagen su texto es `null` y no hay nada que repetir.
+    for (const mode of GAME_MODES) {
+      if (mode === 'locate') continue;
+      const { subject } = promptFor(mode, paisesBajos);
+      const label = optionLabel(mode, paisesBajos);
+      if (subject === null || label === null) continue;
+      expect(label).not.toBe(subject);
+    }
+  });
+
+  it('enunciado y opción nunca son imagen los dos a la vez', () => {
+    // Si los dos fueran imagen no habría pregunta que hacer.
+    for (const mode of GAME_MODES) {
+      if (mode === 'locate') continue;
+      const mudo =
+        promptFor(mode, paisesBajos).subject === null && optionLabel(mode, paisesBajos) === null;
+      expect(mudo).toBe(false);
+    }
+  });
+
+  it('los modos visuales no tienen enunciado de texto', () => {
+    // Si alguien le pusiera texto a estos, la pantalla lo pintaría junto a la
+    // imagen y volvería a delatar la respuesta.
+    expect(promptFor('flags', paisesBajos).subject).toBeNull();
+    expect(promptFor('locateReverse', paisesBajos).subject).toBeNull();
+  });
+
+  it('la corrección va en la dirección del modo', () => {
+    expect(correction('capitals', paisesBajos)).toContain(`capital de ${paisesBajos.nameEs}`);
+    expect(correction('capitalsReverse', paisesBajos)).toMatch(
+      new RegExp(`^${paisesBajos.capital} es la capital`)
+    );
   });
 });
 
