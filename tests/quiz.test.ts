@@ -5,6 +5,13 @@ import { buildQuiz, scoreAnswer, type GameMode } from '@/lib/quiz';
 const MULTIPLE_CHOICE: GameMode[] = ['flags', 'capitals', 'flagsReverse'];
 const DAY = 86_400_000;
 
+/** Atajo para construir una estadística de un modo. Lo usan varios bloques. */
+const stat = (seen: number, correct: number, lastCorrect: number | null = null) => ({
+  seen,
+  correct,
+  lastCorrect,
+});
+
 describe('buildQuiz', () => {
   it.each(MULTIPLE_CHOICE)('%s da 4 opciones con la correcta dentro', (mode) => {
     for (const q of buildQuiz({ mode, region: null, length: 20 })) {
@@ -63,12 +70,6 @@ describe('buildQuiz', () => {
 });
 
 describe('repetición espaciada', () => {
-  const stat = (seen: number, correct: number, lastCorrect: number | null = null) => ({
-    seen,
-    correct,
-    lastCorrect,
-  });
-
   it('prioriza lo nunca visto sobre lo dominado', () => {
     const nuevo = reviewWeight(2, undefined);
     const dominado = reviewWeight(2, stat(10, 10, Date.now()));

@@ -95,16 +95,12 @@ export default function Explore() {
           pointerEvents="none"
         />
 
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.iconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Volver"
-          >
-            <Ionicons name="chevron-back" size={20} color={colors.text} />
-          </Pressable>
-          <Text style={[type.h3, { color: colors.text, flex: 1 }]}>Explorar</Text>
+        {/* Sin botón de volver: es una pestaña, no una pantalla apilada. */}
+        <View style={styles.header} pointerEvents="none">
+          <Text style={[type.h2, { color: colors.text }]}>Explorar</Text>
+          <Text style={[type.small, { color: colors.textDim }]}>
+            Gira el planeta o busca en la lista
+          </Text>
         </View>
 
         {selected && (
@@ -140,7 +136,11 @@ export default function Explore() {
             autoCorrect={false}
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery('')}>
+            <Pressable
+              onPress={() => setQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Borrar la búsqueda"
+            >
               <Ionicons name="close-circle" size={17} color={colors.textFaint} />
             </Pressable>
           )}
@@ -169,6 +169,7 @@ export default function Explore() {
           contentContainerStyle={{ paddingBottom: 24, gap: 8 }}
           initialNumToRender={14}
           windowSize={9}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <CountryRow
               country={item}
@@ -249,23 +250,12 @@ function CountryRow({
 }
 
 const styles = StyleSheet.create({
-  globeWrap: { height: '46%', overflow: 'hidden' },
+  globeWrap: { height: '42%', overflow: 'hidden' },
   topFade: { position: 'absolute', top: 0, left: 0, right: 0, height: 120 },
   bottomFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 120 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-  },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   selectedCard: {
     position: 'absolute',

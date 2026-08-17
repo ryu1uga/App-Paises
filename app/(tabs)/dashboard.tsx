@@ -25,7 +25,7 @@ import {
 } from '@/store/progress';
 import { colors, gradients, radius, regionColors, regionGradients, spacing, type } from '@/theme/theme';
 
-export default function Profile() {
+export default function Dashboard() {
   const router = useRouter();
   const { streak, bestStreak, stats, history, reset } = useProgress();
 
@@ -52,30 +52,27 @@ export default function Profile() {
     <Screen>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: spacing.xl, paddingBottom: 48, gap: spacing.lg }}
+        contentContainerStyle={{ padding: spacing.xl, paddingBottom: spacing.xl, gap: spacing.lg }}
       >
-        <View style={styles.topBar}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.iconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar"
+        {/* Sin botón de cerrar: es una pestaña, no una hoja modal. */}
+        <Reveal from="top">
+          <Text style={[type.label, { color: colors.primary }]}>TU PROGRESO</Text>
+          <Text
+            style={[type.h1, { color: colors.text, marginTop: 4 }]}
+            maxFontSizeMultiplier={1.4}
           >
-            <Ionicons name="chevron-down" size={20} color={colors.text} />
-          </Pressable>
-          <Text style={[type.label, { color: colors.textFaint }]}>TU PROGRESO</Text>
-          <View style={{ width: 40 }} />
-        </View>
+            {rank.title}
+          </Text>
+        </Reveal>
 
-        <Reveal from="scale">
+        <Reveal from="scale" delay={60}>
           <GlassCard padding={22} accent={gradients.aurora}>
             <View style={{ alignItems: 'center' }}>
               <ProgressRing ratio={stars / TOTAL_STARS} size={140} stroke={12} from="#FBBF24" to="#FB7185">
                 <Text style={[type.hero, { color: colors.text }]}>{stars}</Text>
                 <Text style={[type.label, { color: colors.textFaint }]}>ESTRELLAS</Text>
               </ProgressRing>
-              <Text style={[type.h2, { color: colors.text, marginTop: 14 }]}>{rank.title}</Text>
-              <Text style={[type.small, { color: colors.textDim, textAlign: 'center' }]}>
+              <Text style={[type.small, { color: colors.textDim, textAlign: 'center', marginTop: 14 }]}>
                 {rank.next === null
                   ? `Las ${TOTAL_STARS} estrellas del mundo`
                   : `${stars} de ${TOTAL_STARS} · ${rank.remaining} para el siguiente rango`}
@@ -84,7 +81,7 @@ export default function Profile() {
           </GlassCard>
         </Reveal>
 
-        <Reveal delay={80}>
+        <Reveal delay={110}>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <StatPill value={mastered} label="dominadas" color={colors.warning} />
             <StatPill value={streak} label="racha actual" color={colors.primary} />
@@ -92,7 +89,7 @@ export default function Profile() {
           </View>
         </Reveal>
 
-        <Reveal delay={130}>
+        <Reveal delay={160}>
           <GlassCard padding={18}>
             <Text style={[type.label, { color: colors.textFaint, marginBottom: 14 }]}>
               POR MODO
@@ -127,7 +124,7 @@ export default function Profile() {
           </GlassCard>
         </Reveal>
 
-        <Reveal delay={180}>
+        <Reveal delay={210}>
           <GlassCard padding={18}>
             <Text style={[type.label, { color: colors.textFaint, marginBottom: 14 }]}>
               POR CONTINENTE
@@ -153,7 +150,7 @@ export default function Profile() {
         </Reveal>
 
         {weakest.length > 0 && (
-          <Reveal delay={230}>
+          <Reveal delay={260}>
             <GlassCard padding={18}>
               <Text style={[type.label, { color: colors.textFaint, marginBottom: 12 }]}>
                 SIGUE PRACTICANDO
@@ -183,7 +180,7 @@ export default function Profile() {
         )}
 
         {history.length > 0 && (
-          <Reveal delay={280}>
+          <Reveal delay={310}>
             <GlassCard padding={18}>
               <Text style={[type.label, { color: colors.textFaint, marginBottom: 12 }]}>
                 ÚLTIMAS PARTIDAS
@@ -222,7 +219,7 @@ export default function Profile() {
           </Reveal>
         )}
 
-        <Reveal delay={330}>
+        <Reveal delay={360}>
           <GhostButton
             label="Reiniciar progreso"
             onPress={confirmReset}
@@ -235,15 +232,6 @@ export default function Profile() {
 }
 
 const styles = StyleSheet.create({
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   weakWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   weakChip: {
