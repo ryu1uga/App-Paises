@@ -257,6 +257,9 @@ export default function Identify() {
 
           <ScrollView
             showsVerticalScrollIndicator={false}
+            // Mismo motivo que en Explorar: sin `flex: 1` crece con su contenido
+            // en vez de quedarse con el hueco que le deja el panel.
+            style={{ flex: 1 }}
             contentContainerStyle={{ gap: 10, paddingBottom: spacing.md }}
           >
             {q.options.map((option, i) => (

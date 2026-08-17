@@ -151,6 +151,9 @@ export default function Explore() {
           showsHorizontalScrollIndicator={false}
           data={['Todos', ...regions]}
           keyExtractor={(r) => r}
+          // Sin `flexGrow: 0` una lista horizontal se reparte el alto sobrante
+          // con la de resultados en vez de ceñirse a sus chips.
+          style={{ flexGrow: 0 }}
           contentContainerStyle={{ gap: 8, paddingVertical: 12 }}
           renderItem={({ item }) => (
             <Chip
@@ -166,6 +169,9 @@ export default function Explore() {
           data={results}
           keyExtractor={(c) => c.id}
           showsVerticalScrollIndicator={false}
+          // Sin `flex: 1` la lista crece con sus 195 filas y el panel le recorta
+          // el final: las últimas quedaban fuera y sin manera de alcanzarlas.
+          style={{ flex: 1 }}
           contentContainerStyle={{ paddingBottom: 24, gap: 8 }}
           initialNumToRender={14}
           windowSize={9}
