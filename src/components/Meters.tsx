@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedProps,
   useAnimatedStyle,
@@ -130,6 +130,61 @@ export function StatPill({
   );
 }
 
+/**
+ * Fila de progreso de un modo: icono, nombre, estrellas ganadas sobre el total
+ * y barra. El número en ámbar son las estrellas rellenas (países dominados).
+ */
+export function StarRow({
+  label,
+  icon,
+  gradient,
+  stars,
+  mastered,
+  total,
+  onPress,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  gradient?: readonly string[];
+  stars: number;
+  mastered: number;
+  total: number;
+  onPress?: () => void;
+}) {
+  const body = (
+    <View style={{ gap: 7 }}>
+      <View style={styles.row}>
+        <View style={styles.starRowSide}>
+          {icon}
+          <Text style={[type.bodyStrong, { color: colors.text }]}>{label}</Text>
+        </View>
+        <View style={styles.starRowSide}>
+          {mastered > 0 && (
+            <Text style={[type.small, { color: colors.warning }]}>{mastered} dominados</Text>
+          )}
+          <Text style={[type.bodyStrong, { color: colors.text }]}>
+            {stars}
+            <Text style={[type.small, { color: colors.textFaint }]}>/{total}</Text>
+          </Text>
+        </View>
+      </View>
+      <ProgressBar ratio={total === 0 ? 0 : stars / total} height={6} gradient={gradient} />
+    </View>
+  );
+
+  if (!onPress) return body;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}. ${stars} de ${total} estrellas. Jugar`}
+      style={({ pressed }) => (pressed ? { opacity: 0.65 } : undefined)}
+    >
+      {body}
+    </Pressable>
+  );
+}
+
 /** Contador de la ronda: 3 / 12 + barra. */
 export function QuizProgress({
   index,
@@ -164,4 +219,5 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  starRowSide: { flexDirection: 'row', alignItems: 'center', gap: 7 },
 });

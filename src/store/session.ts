@@ -9,8 +9,13 @@ export type AnswerLog = {
   /** Respuesta elegida (id de país) o coordenada en el modo "ubicar". */
   given?: string;
   distanceKm?: number;
+  /** Marcador de la partida. El progreso permanente son las estrellas. */
   points: number;
   ms: number;
+  /** Esta respuesta ganó la estrella del país en este modo. */
+  newStar?: boolean;
+  /** Y además lo dejó dominado (estrella rellena). */
+  newMastered?: boolean;
 };
 
 type SessionState = {

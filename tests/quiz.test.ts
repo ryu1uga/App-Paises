@@ -101,8 +101,8 @@ describe('repetición espaciada', () => {
     const fallados = pool.slice(0, 10).map((c) => c.id);
     const stats: StatsMap = {};
     // Todo dominado salvo diez que se fallan siempre.
-    for (const c of pool) stats[c.id] = stat(10, 10, Date.now());
-    for (const id of fallados) stats[id] = stat(10, 0, null);
+    for (const c of pool) stats[c.id] = { flags: stat(10, 10, Date.now()) };
+    for (const id of fallados) stats[id] = { flags: stat(10, 0, null) };
 
     let apariciones = 0;
     const rondas = 40;
@@ -113,14 +113,68 @@ describe('repetición espaciada', () => {
       apariciones += ids.filter((id) => fallados.includes(id)).length;
     }
 
-    // Sin ponderar saldrían ~0,6 por ronda (10 de 195); con repetición espaciada
-    // deben salir muchos más.
+    // Sin ponderar saldrían ~0,6 por ronda (10 de 195). Al no tener estrella caen
+    // en la pila de repaso, que tiene reservada la mitad de la ronda.
     expect(apariciones / rondas).toBeGreaterThan(3);
   });
 
   it('sin historial mantiene el reparto por tramos', () => {
     const quiz = buildQuiz({ mode: 'flags', region: null, length: 20 });
     expect(quiz).toHaveLength(20);
+  });
+});
+
+describe('el mazo', () => {
+  /** Encadena rondas anotando cada respuesta como acierto. */
+  const jugar = (rondas: number, length = 12, mode: GameMode = 'flags') => {
+    const stats: StatsMap = {};
+    const vistos: string[] = [];
+
+    for (let r = 0; r < rondas; r++) {
+      for (const q of buildQuiz({ mode, region: null, length, stats })) {
+        vistos.push(q.target.id);
+        const prev = stats[q.target.id]?.[mode];
+        stats[q.target.id] = {
+          ...stats[q.target.id],
+          [mode]: {
+            seen: (prev?.seen ?? 0) + 1,
+            correct: (prev?.correct ?? 0) + 1,
+            lastCorrect: Date.now(),
+          },
+        };
+      }
+    }
+    return { stats, vistos };
+  };
+
+  it('acertando siempre, ningún país se repite antes de ver los 195', () => {
+    // 16 rondas de 12 = 192 preguntas, aún por debajo de los 195 del mazo.
+    const { vistos } = jugar(16);
+    expect(vistos).toHaveLength(192);
+    expect(new Set(vistos).size).toBe(192);
+  });
+
+  it('un país fallado vuelve pronto, sin esperar a dar la vuelta al mazo', () => {
+    const fallado = countriesOf(null)[0].id;
+    const stats: StatsMap = { [fallado]: { flags: stat(1, 0) } };
+
+    let apariciones = 0;
+    for (let i = 0; i < 40; i++) {
+      const ids = buildQuiz({ mode: 'flags', region: null, length: 12, stats }).map(
+        (q) => q.target.id
+      );
+      if (ids.includes(fallado)) apariciones++;
+    }
+    // Con un mazo estricto de 195 cartas tardaría ~16 rondas en reaparecer.
+    expect(apariciones).toBeGreaterThan(20);
+  });
+
+  it('cada modo tiene su propio mazo', () => {
+    const { stats } = jugar(4, 12, 'flags');
+    const enCapitales = buildQuiz({ mode: 'capitals', region: null, length: 12, stats });
+    // Lo jugado en banderas no gasta el mazo de capitales.
+    expect(enCapitales).toHaveLength(12);
+    expect(enCapitales.every((q) => (stats[q.target.id]?.capitals?.seen ?? 0) === 0)).toBe(true);
   });
 });
 

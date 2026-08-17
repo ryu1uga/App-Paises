@@ -7,13 +7,13 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Confetti } from '@/components/Confetti';
 import { Flag } from '@/components/Flag';
 import { GlassCard } from '@/components/GlassCard';
-import { ProgressRing, StatPill } from '@/components/Meters';
+import { ProgressBar, ProgressRing, StatPill } from '@/components/Meters';
 import { GhostButton, PrimaryButton } from '@/components/Pressables';
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import { byId } from '@/data/countries';
 import { MODE_META } from '@/lib/quiz';
-import { levelTitle, useProgress } from '@/store/progress';
+import { STARS_PER_MODE, starsIn, useProgress } from '@/store/progress';
 import { gradeFor, useSession } from '@/store/session';
 import { colors, gradients, radius, spacing, type } from '@/theme/theme';
 
@@ -21,36 +21,50 @@ export default function Results() {
   const router = useRouter();
   const session = useSession();
   const finishRun = useProgress((s) => s.finishRun);
+  const stats = useProgress((s) => s.stats);
 
   const answers = session.answers;
   const correct = answers.filter((a) => a.correct).length;
   const total = Math.max(1, answers.length);
   const ratio = correct / total;
-  const xp = answers.reduce((a, x) => a + x.points, 0);
+  const points = answers.reduce((a, x) => a + x.points, 0);
+  const stars = answers.filter((a) => a.newStar).length;
+  const mastered = answers.filter((a) => a.newMastered).length;
   const duration = Date.now() - session.startedAt;
   const grade = gradeFor(ratio);
   const meta = MODE_META[session.mode];
 
-  const [levelUp, setLevelUp] = React.useState<{ leveledUp: boolean; newLevel: number } | null>(null);
+  // Las estrellas se anotaron respuesta a respuesta, así que este contador ya
+  // incluye las de esta ronda; el "antes" sale de restarlas.
+  const modeStars = starsIn(stats, session.mode);
+
+  const [outcome, setOutcome] = React.useState<{
+    rank: string;
+    rankUp: boolean;
+    stars: number;
+  } | null>(null);
 
   React.useEffect(() => {
     if (!answers.length) return;
-    const res = finishRun({
-      mode: session.mode,
-      region: session.region,
-      correct,
-      total: answers.length,
-      xp,
-      bestStreak: session.bestStreak,
-      duration,
-    });
-    setLevelUp(res);
+    setOutcome(
+      finishRun({
+        mode: session.mode,
+        region: session.region,
+        correct,
+        total: answers.length,
+        points,
+        stars,
+        mastered,
+        bestStreak: session.bestStreak,
+        duration,
+      })
+    );
     // Solo debe ejecutarse una vez al montar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const wrong = answers.filter((a) => !a.correct);
-  const celebrate = ratio >= 0.85 || !!levelUp?.leveledUp;
+  const celebrate = ratio >= 0.85 || !!outcome?.rankUp || stars > 0;
 
   return (
     <Screen>
@@ -90,7 +104,7 @@ export default function Results() {
           </View>
         </Reveal>
 
-        {levelUp?.leveledUp && (
+        {outcome?.rankUp && (
           <Reveal delay={120}>
             <GlassCard accent={gradients.sunset} padding={16}>
               <View style={styles.levelRow}>
@@ -98,11 +112,9 @@ export default function Results() {
                   <Ionicons name="trophy" size={22} color={colors.warning} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[type.h3, { color: colors.text }]}>
-                    ¡Nivel {levelUp.newLevel} alcanzado!
-                  </Text>
+                  <Text style={[type.h3, { color: colors.text }]}>¡Ahora eres {outcome.rank}!</Text>
                   <Text style={[type.small, { color: colors.textDim }]}>
-                    Ahora eres {levelTitle(levelUp.newLevel)}
+                    Nuevo rango desbloqueado por tu colección de estrellas
                   </Text>
                 </View>
               </View>
@@ -112,10 +124,36 @@ export default function Results() {
 
         <Reveal delay={160}>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <StatPill value={`+${xp}`} label="XP ganada" />
+            <StatPill value={`+${stars}`} label="estrellas" color={colors.warning} />
             <StatPill value={`${correct}/${answers.length}`} label="aciertos" color={colors.secondary} />
-            <StatPill value={session.bestStreak} label="mejor racha" color={colors.warning} />
+            <StatPill value={points} label="puntos" />
           </View>
+        </Reveal>
+
+        {/* Dónde queda el modo tras esta ronda: es el progreso que de verdad cuenta. */}
+        <Reveal delay={190}>
+          <GlassCard padding={18} accent={meta.gradient}>
+            <View style={styles.rowBetween}>
+              <View style={styles.starTitle}>
+                <Ionicons name="star" size={16} color={colors.warning} />
+                <Text style={[type.h3, { color: colors.text }]}>{meta.title}</Text>
+              </View>
+              <Text style={[type.h3, { color: colors.warning }]}>
+                {modeStars}/{STARS_PER_MODE}
+              </Text>
+            </View>
+            <View style={{ marginTop: 12 }}>
+              <ProgressBar ratio={modeStars / STARS_PER_MODE} gradient={meta.gradient} />
+            </View>
+            <Text style={[type.small, { color: colors.textFaint, marginTop: 8 }]}>
+              {stars > 0
+                ? `+${stars} ${stars === 1 ? 'estrella nueva' : 'estrellas nuevas'} en esta ronda` +
+                  (mastered > 0
+                    ? ` · ${mastered} ${mastered === 1 ? 'país dominado' : 'países dominados'}`
+                    : '')
+                : `Te quedan ${STARS_PER_MODE - modeStars} países por sacar en este modo.`}
+            </Text>
+          </GlassCard>
         </Reveal>
 
         {wrong.length > 0 && (
@@ -198,6 +236,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  starTitle: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   levelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   levelBadge: {
     width: 46,

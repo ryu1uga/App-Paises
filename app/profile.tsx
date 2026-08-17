@@ -5,17 +5,20 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 
 import { Flag } from '@/components/Flag';
 import { GlassCard } from '@/components/GlassCard';
-import { ProgressBar, ProgressRing, StatPill } from '@/components/Meters';
+import { ProgressBar, ProgressRing, StarRow, StatPill } from '@/components/Meters';
 import { GhostButton } from '@/components/Pressables';
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import { byId, TOTAL_COUNTRIES } from '@/data/countries';
 import { MODE_META } from '@/lib/quiz';
 import {
-  levelProgress,
-  levelTitle,
+  TOTAL_STARS,
+  countMastered,
+  countStars,
+  rankForStars,
   selectAccuracy,
-  selectMastered,
+  selectComplete,
+  selectModeProgress,
   selectRegionProgress,
   selectWeakest,
   useProgress,
@@ -24,19 +27,26 @@ import { colors, gradients, radius, regionColors, regionGradients, spacing, type
 
 export default function Profile() {
   const router = useRouter();
-  const { xp, streak, bestStreak, stats, history, reset } = useProgress();
+  const { streak, bestStreak, stats, history, reset } = useProgress();
 
-  const level = levelProgress(xp);
-  const mastered = selectMastered(stats);
+  const stars = countStars(stats);
+  const mastered = countMastered(stats);
+  const rank = rankForStars(stars);
+  const modes = selectModeProgress(stats);
+  const complete = selectComplete(stats).length;
   const accuracy = selectAccuracy(stats);
   const byRegion = selectRegionProgress(stats);
   const weakest = selectWeakest(stats, 8);
 
   const confirmReset = () =>
-    Alert.alert('Reiniciar progreso', 'Se borrarán tu XP, racha y estadísticas. No se puede deshacer.', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Borrar todo', style: 'destructive', onPress: reset },
-    ]);
+    Alert.alert(
+      'Reiniciar progreso',
+      'Se borrarán tus estrellas, tu racha y tus estadísticas. No se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Borrar todo', style: 'destructive', onPress: reset },
+      ]
+    );
 
   return (
     <Screen>
@@ -60,15 +70,15 @@ export default function Profile() {
         <Reveal from="scale">
           <GlassCard padding={22} accent={gradients.aurora}>
             <View style={{ alignItems: 'center' }}>
-              <ProgressRing ratio={level.ratio} size={140} stroke={12}>
-                <Text style={[type.hero, { color: colors.text }]}>{level.level}</Text>
-                <Text style={[type.label, { color: colors.textFaint }]}>NIVEL</Text>
+              <ProgressRing ratio={stars / TOTAL_STARS} size={140} stroke={12} from="#FBBF24" to="#FB7185">
+                <Text style={[type.hero, { color: colors.text }]}>{stars}</Text>
+                <Text style={[type.label, { color: colors.textFaint }]}>ESTRELLAS</Text>
               </ProgressRing>
-              <Text style={[type.h2, { color: colors.text, marginTop: 14 }]}>
-                {levelTitle(level.level)}
-              </Text>
-              <Text style={[type.small, { color: colors.textDim }]}>
-                {level.current} / {level.needed} XP hacia el nivel {level.level + 1}
+              <Text style={[type.h2, { color: colors.text, marginTop: 14 }]}>{rank.title}</Text>
+              <Text style={[type.small, { color: colors.textDim, textAlign: 'center' }]}>
+                {rank.next === null
+                  ? `Las ${TOTAL_STARS} estrellas del mundo`
+                  : `${stars} de ${TOTAL_STARS} · ${rank.remaining} para el siguiente rango`}
               </Text>
             </View>
           </GlassCard>
@@ -76,26 +86,43 @@ export default function Profile() {
 
         <Reveal delay={80}>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <StatPill value={xp} label="XP total" />
-            <StatPill value={streak} label="racha actual" color={colors.warning} />
+            <StatPill value={mastered} label="dominadas" color={colors.warning} />
+            <StatPill value={streak} label="racha actual" color={colors.primary} />
             <StatPill value={bestStreak} label="mejor racha" color={colors.accent} />
           </View>
         </Reveal>
 
         <Reveal delay={130}>
           <GlassCard padding={18}>
-            <View style={styles.rowBetween}>
-              <Text style={[type.h3, { color: colors.text }]}>Países dominados</Text>
-              <Text style={[type.h3, { color: colors.primary }]}>
-                {mastered.length}/{TOTAL_COUNTRIES}
-              </Text>
+            <Text style={[type.label, { color: colors.textFaint, marginBottom: 14 }]}>
+              POR MODO
+            </Text>
+            <View style={{ gap: 14 }}>
+              {modes.map((m) => (
+                <StarRow
+                  key={m.mode}
+                  label={MODE_META[m.mode].title}
+                  icon={
+                    <Ionicons
+                      name={MODE_META[m.mode].icon as never}
+                      size={15}
+                      color={MODE_META[m.mode].gradient[0]}
+                    />
+                  }
+                  gradient={MODE_META[m.mode].gradient}
+                  stars={m.stars}
+                  mastered={m.mastered}
+                  total={m.total}
+                  onPress={() =>
+                    router.push({ pathname: '/game/setup', params: { mode: m.mode } })
+                  }
+                />
+              ))}
             </View>
-            <View style={{ marginTop: 12 }}>
-              <ProgressBar ratio={mastered.length / TOTAL_COUNTRIES} />
-            </View>
-            <Text style={[type.small, { color: colors.textFaint, marginTop: 8 }]}>
-              Un país cuenta como dominado tras 3 aciertos con al menos 70 % de precisión.
-              Precisión global: {Math.round(accuracy * 100)} %.
+            <Text style={[type.small, { color: colors.textFaint, marginTop: 14 }]}>
+              Una estrella por país y modo: se gana al primer acierto y se rellena al dominarlo
+              (3 aciertos con al menos 70 % de precisión). {complete} de {TOTAL_COUNTRIES} países
+              tienen las cuatro. Precisión global: {Math.round(accuracy * 100)} %.
             </Text>
           </GlassCard>
         </Reveal>
@@ -111,7 +138,7 @@ export default function Profile() {
                   <View style={styles.rowBetween}>
                     <Text style={[type.bodyStrong, { color: colors.text }]}>{r.region}</Text>
                     <Text style={[type.small, { color: regionColors[r.region] ?? colors.primary }]}>
-                      {r.mastered}/{r.total}
+                      {r.stars}/{r.total}
                     </Text>
                   </View>
                   <ProgressBar
@@ -175,7 +202,8 @@ export default function Profile() {
                           {meta.title} · {h.region ?? 'Mundo'}
                         </Text>
                         <Text style={[type.small, { color: colors.textFaint }]}>
-                          {h.correct}/{h.total} aciertos · +{h.xp} XP
+                          {h.correct}/{h.total} aciertos · {h.points} pts
+                          {h.stars > 0 ? ` · +${h.stars} ★` : ''}
                         </Text>
                       </View>
                       <Text

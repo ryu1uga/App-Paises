@@ -77,15 +77,23 @@ export default function Locate() {
     const correct = selected.id === target.id;
     setPicked(selected);
 
+    const gain = registerAnswer(target.id, 'locate', correct);
     push({
       countryId: target.id,
       correct,
       given: selected.id,
       distanceKm: haversine(selected, target),
-      points: scoreAnswer({ correct, msElapsed: ms, streak, difficulty: target.difficulty }),
+      points: scoreAnswer({
+        correct,
+        msElapsed: ms,
+        streak,
+        difficulty: target.difficulty,
+        mode: 'locate',
+      }),
       ms,
+      newStar: gain.newStar,
+      newMastered: gain.newMastered,
     });
-    registerAnswer(target.id, correct);
 
     void Haptics.notificationAsync(
       correct ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error

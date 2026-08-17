@@ -64,9 +64,25 @@ export default function Play() {
     const correct = country.id === q.target.id;
     setPicked(country.id);
 
-    const points = scoreAnswer({ correct, msElapsed: ms, streak, difficulty: q.target.difficulty });
-    push({ countryId: q.target.id, correct, given: country.id, points, ms });
-    registerAnswer(q.target.id, correct);
+    const points = scoreAnswer({
+      correct,
+      msElapsed: ms,
+      streak,
+      difficulty: q.target.difficulty,
+      mode,
+    });
+    // El store es quien sabe si esta respuesta ganó estrella, así que se anota
+    // primero y su respuesta viaja en el log hasta la pantalla de resultados.
+    const gain = registerAnswer(q.target.id, mode, correct);
+    push({
+      countryId: q.target.id,
+      correct,
+      given: country.id,
+      points,
+      ms,
+      newStar: gain.newStar,
+      newMastered: gain.newMastered,
+    });
 
     if (correct) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

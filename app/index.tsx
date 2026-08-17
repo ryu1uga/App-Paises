@@ -5,31 +5,34 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '@/components/GlassCard';
-import { ProgressBar } from '@/components/Meters';
+import { ProgressRing, StarRow } from '@/components/Meters';
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import { TOTAL_COUNTRIES } from '@/data/countries';
 import { Globe } from '@/globe/Globe';
-import { MODE_META, type GameMode } from '@/lib/quiz';
+import { GAME_MODES, MODE_META, type GameMode } from '@/lib/quiz';
 import {
-  levelProgress,
-  levelTitle,
+  TOTAL_STARS,
+  countMastered,
+  countStars,
+  rankForStars,
   selectAccuracy,
-  selectMastered,
+  selectModeProgress,
   useProgress,
 } from '@/store/progress';
 import { colors, gradients, radius, spacing, type } from '@/theme/theme';
 
-const MODES: GameMode[] = ['flags', 'capitals', 'locate', 'flagsReverse'];
+const MODES: GameMode[] = GAME_MODES;
 
 export default function Home() {
   const router = useRouter();
-  const xp = useProgress((s) => s.xp);
   const streak = useProgress((s) => s.streak);
   const stats = useProgress((s) => s.stats);
 
-  const level = levelProgress(xp);
-  const mastered = selectMastered(stats).length;
+  const stars = countStars(stats);
+  const mastered = countMastered(stats);
+  const rank = rankForStars(stars);
+  const modes = selectModeProgress(stats);
   const accuracy = selectAccuracy(stats);
 
   return (
@@ -51,13 +54,13 @@ export default function Home() {
               onPress={() => router.push('/profile')}
               style={styles.avatar}
               accessibilityRole="button"
-              accessibilityLabel={`Tu perfil. Nivel ${level.level}`}
+              accessibilityLabel={`Tu perfil. ${stars} de ${TOTAL_STARS} estrellas. ${rank.title}`}
             >
               <LinearGradient
                 colors={gradients.aurora as unknown as [string, string, string]}
                 style={StyleSheet.absoluteFill}
               />
-              <Text style={[type.h2, { color: '#04121A' }]}>{level.level}</Text>
+              <Ionicons name="star" size={22} color="#04121A" />
             </Pressable>
           </View>
         </Reveal>
@@ -96,29 +99,56 @@ export default function Home() {
           </Pressable>
         </Reveal>
 
-        {/* Progreso */}
+        {/* Colección de estrellas: una por país y modo. */}
         <Reveal delay={140}>
           <GlassCard accent={gradients.aurora} padding={18}>
             <View style={styles.rowBetween}>
-              <View>
-                <Text style={[type.h3, { color: colors.text }]}>Nivel {level.level}</Text>
-                <Text style={[type.small, { color: colors.textDim }]}>{levelTitle(level.level)}</Text>
-              </View>
-              <View style={styles.streakChip}>
-                <Ionicons name="flame" size={15} color={colors.warning} />
-                <Text style={[type.bodyStrong, { color: colors.warning }]}>{streak}</Text>
+              <ProgressRing ratio={stars / TOTAL_STARS} size={124} stroke={11} from="#FBBF24" to="#FB7185">
+                <Text style={[type.hero, { color: colors.text }]}>{stars}</Text>
+                <Text style={[type.label, { color: colors.textFaint }]}>DE {TOTAL_STARS}</Text>
+              </ProgressRing>
+
+              <View style={styles.rankSide}>
+                <View style={styles.streakChip}>
+                  <Ionicons name="flame" size={15} color={colors.warning} />
+                  <Text style={[type.bodyStrong, { color: colors.warning }]}>{streak}</Text>
+                </View>
+                <Text style={[type.h3, { color: colors.text, marginTop: 12, textAlign: 'right' }]}>
+                  {rank.title}
+                </Text>
+                <Text style={[type.small, { color: colors.textDim, textAlign: 'right' }]}>
+                  {rank.next === null
+                    ? 'Has coleccionado el mundo entero'
+                    : `${rank.remaining} estrellas para el siguiente rango`}
+                </Text>
               </View>
             </View>
 
-            <View style={{ marginTop: 14, gap: 6 }}>
-              <ProgressBar ratio={level.ratio} />
-              <Text style={[type.small, { color: colors.textFaint }]}>
-                {level.current} / {level.needed} XP para el nivel {level.level + 1}
-              </Text>
+            <View style={{ marginTop: 18, gap: 14 }}>
+              {modes.map((m) => (
+                <StarRow
+                  key={m.mode}
+                  label={MODE_META[m.mode].title}
+                  icon={
+                    <Ionicons
+                      name={MODE_META[m.mode].icon as never}
+                      size={15}
+                      color={MODE_META[m.mode].gradient[0]}
+                    />
+                  }
+                  gradient={MODE_META[m.mode].gradient}
+                  stars={m.stars}
+                  mastered={m.mastered}
+                  total={m.total}
+                  onPress={() =>
+                    router.push({ pathname: '/game/setup', params: { mode: m.mode } })
+                  }
+                />
+              ))}
             </View>
 
             <View style={styles.miniStats}>
-              <MiniStat value={`${mastered}`} label={`de ${TOTAL_COUNTRIES} dominados`} />
+              <MiniStat value={`${mastered}`} label="estrellas dominadas" color={colors.warning} />
               <View style={styles.divider} />
               <MiniStat
                 value={`${Math.round(accuracy * 100)}%`}
@@ -126,7 +156,11 @@ export default function Home() {
                 color={colors.secondary}
               />
               <View style={styles.divider} />
-              <MiniStat value={`${xp}`} label="XP total" color={colors.accent} />
+              <MiniStat
+                value={`${TOTAL_COUNTRIES}`}
+                label="países en juego"
+                color={colors.accent}
+              />
             </View>
           </GlassCard>
         </Reveal>
@@ -217,6 +251,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rankSide: { flex: 1, alignItems: 'flex-end', paddingLeft: spacing.md },
   streakChip: {
     flexDirection: 'row',
     alignItems: 'center',

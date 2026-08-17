@@ -23,7 +23,7 @@ import {
 } from '@/data/countries';
 import { Globe, type GlobeHandle, type GlobeMarker } from '@/globe/Globe';
 import { countryNear } from '@/lib/locate';
-import { isMastered, useProgress } from '@/store/progress';
+import { GAME_MODES, starsForCountry, useProgress } from '@/store/progress';
 import { colors, radius, regionColors, spacing, type } from '@/theme/theme';
 
 export default function Explore() {
@@ -172,7 +172,7 @@ export default function Explore() {
           renderItem={({ item }) => (
             <CountryRow
               country={item}
-              mastered={isMastered(stats[item.id])}
+              stars={starsForCountry(stats, item.id)}
               active={selected?.id === item.id}
               onPress={() => focus(item)}
               onOpen={() => router.push({ pathname: '/country/[id]', params: { id: item.id } })}
@@ -191,23 +191,25 @@ export default function Explore() {
 
 function CountryRow({
   country,
-  mastered,
+  stars,
   active,
   onPress,
   onOpen,
 }: {
   country: Country;
-  mastered: boolean;
+  /** Estrellas ganadas de las 4 posibles (una por modo). */
+  stars: number;
   active: boolean;
   onPress: () => void;
   onOpen: () => void;
 }) {
+  const complete = stars === GAME_MODES.length;
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`${country.nameEs}. Capital ${country.capital}${mastered ? '. Dominado' : ''}`}
+      accessibilityLabel={`${country.nameEs}. Capital ${country.capital}. ${stars} de ${GAME_MODES.length} estrellas`}
       accessibilityHint="Toca para centrarlo en el globo, mantén pulsado para ver su ficha"
       accessibilityState={{ selected: active }}
       style={[styles.row, active && { borderColor: colors.primary, backgroundColor: 'rgba(45,212,191,0.10)' }]}
@@ -218,7 +220,16 @@ function CountryRow({
           <Text style={[type.bodyStrong, { color: colors.text }]} numberOfLines={1}>
             {country.nameEs}
           </Text>
-          {mastered && <Ionicons name="checkmark-circle" size={14} color={colors.success} />}
+          {complete ? (
+            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+          ) : (
+            stars > 0 && (
+              <View style={styles.starCount}>
+                <Ionicons name="star" size={10} color={colors.warning} />
+                <Text style={[type.label, { color: colors.warning }]}>{stars}</Text>
+              </View>
+            )
+          )}
         </View>
         <Text style={[type.small, { color: colors.textFaint }]} numberOfLines={1}>
           {country.capital} · {country.subregion}
@@ -294,4 +305,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
   openBtn: { padding: 4 },
+  starCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(251,191,36,0.14)',
+  },
 });
