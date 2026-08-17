@@ -9,6 +9,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Flag } from '@/components/Flag';
 import { colors, gradients, radius, shadow, type } from '@/theme/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -124,6 +125,18 @@ export function GhostButton({
 
 type OptionState = 'idle' | 'correct' | 'wrong' | 'muted';
 
+/** Los cuatro estados de una opción, compartidos por la fila y la caja. */
+const OPTION_PALETTE: Record<OptionState, { bg: string; border: string; text: string }> = {
+  idle: { bg: 'rgba(255,255,255,0.055)', border: colors.border, text: colors.text },
+  correct: { bg: colors.successBg, border: colors.success, text: colors.success },
+  wrong: { bg: colors.dangerBg, border: colors.danger, text: colors.danger },
+  muted: {
+    bg: 'rgba(255,255,255,0.02)',
+    border: 'rgba(255,255,255,0.05)',
+    text: colors.textFaint,
+  },
+};
+
 export function OptionButton({
   label,
   sublabel,
@@ -156,12 +169,7 @@ export function OptionButton({
     progress.value = withTiming(state === 'idle' ? 0 : 1, { duration: 220 });
   }, [state, progress]);
 
-  const palette = {
-    idle: { bg: 'rgba(255,255,255,0.055)', border: colors.border, text: colors.text },
-    correct: { bg: colors.successBg, border: colors.success, text: colors.success },
-    wrong: { bg: colors.dangerBg, border: colors.danger, text: colors.danger },
-    muted: { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.05)', text: colors.textFaint },
-  }[state];
+  const palette = OPTION_PALETTE[state];
 
   const animated = useAnimatedStyle(() => ({
     opacity: state === 'muted' ? withTiming(0.45) : withTiming(1),
@@ -203,6 +211,81 @@ export function OptionButton({
           </Text>
         )}
       </View>
+    </AnimatedPressable>
+  );
+}
+
+/**
+ * Opción que es una bandera, para la rejilla 2×2 de Bandera inversa.
+ *
+ * El nombre del país solo aparece **después** de responder: antes delataría la
+ * respuesta. El hueco del texto se reserva desde el principio para que la caja
+ * no cambie de alto al revelarse y la rejilla no dé un salto.
+ */
+export function FlagOption({
+  id,
+  name,
+  position,
+  total,
+  revealed,
+  state = 'idle',
+  onPress,
+  disabled,
+  style,
+}: {
+  id: string;
+  name: string;
+  /** Posición 1..n, solo para lectores de pantalla. */
+  position: number;
+  total: number;
+  revealed: boolean;
+  state?: OptionState;
+  onPress: () => void;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const press = usePressScale(0.975);
+  const palette = OPTION_PALETTE[state];
+
+  // Sin revelar no se puede nombrar el país: sería regalar la respuesta a quien
+  // use lector de pantalla. Al resolverse ya se puede decir todo.
+  const spoken = !revealed
+    ? `Bandera ${position} de ${total}`
+    : state === 'correct'
+      ? `${name}. Respuesta correcta`
+      : state === 'wrong'
+        ? `${name}. Respuesta incorrecta`
+        : name;
+
+  const animated = useAnimatedStyle(() => ({
+    opacity: state === 'muted' ? withTiming(0.45) : withTiming(1),
+  }));
+
+  return (
+    <AnimatedPressable
+      disabled={disabled}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={spoken}
+      accessibilityState={{ disabled: !!disabled }}
+      style={[
+        press.style,
+        animated,
+        styles.flagOption,
+        { backgroundColor: palette.bg, borderColor: palette.border },
+        style,
+      ]}
+    >
+      <Flag id={id} width={118} rounded={radius.sm} />
+      <Text
+        style={[type.small, { color: palette.text, textAlign: 'center' }]}
+        numberOfLines={1}
+        maxFontSizeMultiplier={1.3}
+      >
+        {revealed ? name : ' '}
+      </Text>
     </AnimatedPressable>
   );
 }
@@ -267,6 +350,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
     backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  flagOption: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
   },
   option: {
     flexDirection: 'row',

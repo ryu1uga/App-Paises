@@ -63,13 +63,15 @@ export default function RootLayout() {
             animation: 'slide_from_right',
           }}
         >
-          <Stack.Screen name="index" />
-          <Stack.Screen name="explore" />
-          <Stack.Screen name="profile" options={{ animation: 'slide_from_bottom' }} />
+          {/* Retos, Explorar y Progreso viven en la barra inferior. Al ser un
+              grupo entre paréntesis no aparece en la ruta: '/' sigue siendo la
+              pestaña de retos. */}
+          <Stack.Screen name="(tabs)" />
           <Stack.Screen name="country/[id]" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="game/setup" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="game/play" />
           <Stack.Screen name="game/locate" />
+          <Stack.Screen name="game/identify" />
           <Stack.Screen name="game/results" options={{ animation: 'fade' }} />
         </Stack>
       </SafeAreaProvider>

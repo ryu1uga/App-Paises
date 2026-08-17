@@ -3,25 +3,55 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { byId, TOTAL_COUNTRIES } from '@/data/countries';
-import { isMastered, type StatsMap } from '@/lib/mastery';
-import type { GameMode } from '@/lib/quiz';
+import {
+  GAME_MODES,
+  hasStar,
+  isMastered,
+  starsForCountry,
+  totalsForCountry,
+  type CountryStat,
+  type GameMode,
+  type StatsMap,
+} from '@/lib/mastery';
 
-export type { CountryStat } from '@/lib/mastery';
+export type { CountryStat, GameMode, StatsMap };
+export {
+  GAME_MODES,
+  hasStar,
+  isMastered,
+  starState,
+  starsForCountry,
+  totalsForCountry,
+  type CountryModeStats,
+  type StarState,
+} from '@/lib/mastery';
+
+/** Estrellas de un modo: una por país. */
+export const STARS_PER_MODE = TOTAL_COUNTRIES;
+/** Colección completa: 195 países × 6 modos. */
+export const TOTAL_STARS = TOTAL_COUNTRIES * GAME_MODES.length;
 
 export type RunResult = {
   mode: GameMode;
   region: string | null;
   correct: number;
   total: number;
-  xp: number;
+  /** Marcador de la partida (velocidad + racha). No es progreso permanente. */
+  points: number;
+  /** Estrellas nuevas conseguidas en la ronda. */
+  stars: number;
+  /** Estrellas que además pasaron a dominadas. */
+  mastered: number;
   bestStreak: number;
   /** ms */
   duration: number;
   at: number;
 };
 
+/** Lo que cambió al registrar una respuesta, para poder celebrarlo. */
+export type AnswerGain = { newStar: boolean; newMastered: boolean };
+
 type State = {
-  xp: number;
   streak: number;
   bestStreak: number;
   /** YYYY-MM-DD del último día jugado */
@@ -30,8 +60,8 @@ type State = {
   history: RunResult[];
   hydrated: boolean;
 
-  registerAnswer: (countryId: string, correct: boolean) => void;
-  finishRun: (result: Omit<RunResult, 'at'>) => { leveledUp: boolean; newLevel: number };
+  registerAnswer: (countryId: string, mode: GameMode, correct: boolean) => AnswerGain;
+  finishRun: (result: Omit<RunResult, 'at'>) => { rank: string; rankUp: boolean; stars: number };
   touchStreak: () => void;
   reset: () => void;
 };
@@ -43,29 +73,22 @@ const daysBetween = (a: string, b: string) => {
   return Math.round(ms / 86_400_000);
 };
 
-/** Curva de niveles: cada nivel cuesta un poco más que el anterior. */
-export function levelFromXp(xp: number): number {
-  return Math.floor((-1 + Math.sqrt(1 + (8 * xp) / 250)) / 2) + 1;
-}
+/* ------------------------------------------------------------------ */
+/* Rangos                                                              */
+/* ------------------------------------------------------------------ */
 
-export function xpForLevel(level: number): number {
-  const n = level - 1;
-  return Math.round((250 * n * (n + 1)) / 2);
-}
-
-export function levelProgress(xp: number) {
-  const level = levelFromXp(xp);
-  const start = xpForLevel(level);
-  const end = xpForLevel(level + 1);
-  return {
-    level,
-    current: xp - start,
-    needed: end - start,
-    ratio: Math.min(1, Math.max(0, (xp - start) / (end - start))),
-  };
-}
-
-export const LEVEL_TITLES = [
+/**
+ * Los rangos ya no cuelgan de una curva de XP inventada: se reparten a lo largo
+ * de las 1170 estrellas, así que cada uno significa una porción concreta del
+ * mundo aprendida.
+ *
+ * Son trece y no nueve por una razón concreta. Con nueve rangos y cuatro modos
+ * el escalón era de 86,67 estrellas; al añadir los dos modos inversos habría
+ * pasado a 130 y quien ya estuviera jugando habría **bajado de rango sin haber
+ * hecho nada mal**. Los cuatro títulos nuevos van al final a propósito, para
+ * que los nueve primeros sigan significando lo mismo que antes.
+ */
+export const RANK_TITLES = [
   'Turista',
   'Mochilero',
   'Explorador',
@@ -75,18 +98,58 @@ export const LEVEL_TITLES = [
   'Trotamundos',
   'Maestro del Atlas',
   'Leyenda global',
+  'Memoria del mundo',
+  'Cronista del planeta',
+  'Atlas viviente',
+  'Gran Cartógrafo',
 ];
 
-export function levelTitle(level: number): string {
-  return LEVEL_TITLES[Math.min(LEVEL_TITLES.length - 1, Math.floor((level - 1) / 3))];
+/**
+ * El escalón es una constante y no `TOTAL_STARS / RANK_TITLES.length` a
+ * propósito.
+ *
+ * Repartir el total entre los rangos parece más limpio, pero ata el corte de
+ * cada rango al tamaño de la colección: cada modo nuevo empuja todos los cortes
+ * hacia arriba y degrada a quien estuviera justo por encima de uno. Fijándolo en
+ * 86 —por debajo de las 86,67 de la versión de cuatro modos— **ningún corte
+ * puede subir nunca**, así que nadie retrocede jamás por un cambio del juego.
+ *
+ * A cambio, el último rango se alcanza a las 1118 de 1170: las últimas 52
+ * estrellas son la recta final del título máximo, que es como debe leerse.
+ */
+const STARS_PER_RANK = 86;
+
+export function rankForStars(stars: number): {
+  title: string;
+  index: number;
+  /** Estrellas a las que empieza el rango siguiente, o `null` en el último. */
+  next: number | null;
+  /** Cuántas faltan para el siguiente. */
+  remaining: number;
+  /** Avance dentro del rango actual, 0..1. */
+  ratio: number;
+} {
+  const safe = Math.max(0, Math.min(TOTAL_STARS, stars));
+  const index = Math.min(RANK_TITLES.length - 1, Math.floor(safe / STARS_PER_RANK));
+  const start = Math.ceil(index * STARS_PER_RANK);
+  const isLast = index === RANK_TITLES.length - 1;
+  const next = isLast ? null : Math.ceil((index + 1) * STARS_PER_RANK);
+  return {
+    title: RANK_TITLES[index],
+    index,
+    next,
+    remaining: next === null ? 0 : Math.max(0, next - safe),
+    ratio: isLast ? 1 : (safe - start) / Math.max(1, (next as number) - start),
+  };
 }
 
-export { isMastered } from '@/lib/mastery';
+/* ------------------------------------------------------------------ */
+/* Store                                                               */
+/* ------------------------------------------------------------------ */
 
 export const useProgress = create<State>()(
   persist(
     (set, get) => ({
-      xp: 0,
       streak: 0,
       bestStreak: 0,
       lastPlayed: null,
@@ -94,20 +157,29 @@ export const useProgress = create<State>()(
       history: [],
       hydrated: false,
 
-      registerAnswer: (countryId, correct) =>
-        set((s) => {
-          const prev = s.stats[countryId] ?? { seen: 0, correct: 0, lastCorrect: null };
-          return {
-            stats: {
-              ...s.stats,
-              [countryId]: {
-                seen: prev.seen + 1,
-                correct: prev.correct + (correct ? 1 : 0),
-                lastCorrect: correct ? Date.now() : prev.lastCorrect,
-              },
-            },
-          };
-        }),
+      /**
+       * Anota una respuesta y devuelve lo que ha cambiado. El store es el único
+       * sitio que ve el antes y el después, así que es también el único que
+       * puede decir si esta respuesta ganó una estrella.
+       */
+      registerAnswer: (countryId, mode, correct) => {
+        const entry = get().stats[countryId] ?? {};
+        const prev = entry[mode];
+        const next: CountryStat = {
+          seen: (prev?.seen ?? 0) + 1,
+          correct: (prev?.correct ?? 0) + (correct ? 1 : 0),
+          lastCorrect: correct ? Date.now() : (prev?.lastCorrect ?? null),
+        };
+
+        set((s) => ({
+          stats: { ...s.stats, [countryId]: { ...s.stats[countryId], [mode]: next } },
+        }));
+
+        return {
+          newStar: !hasStar(prev) && hasStar(next),
+          newMastered: !isMastered(prev) && isMastered(next),
+        };
+      },
 
       touchStreak: () =>
         set((s) => {
@@ -123,24 +195,29 @@ export const useProgress = create<State>()(
         }),
 
       finishRun: (result) => {
-        const before = levelFromXp(get().xp);
         get().touchStreak();
-        set((s) => ({
-          xp: s.xp + result.xp,
-          history: [{ ...result, at: Date.now() }, ...s.history].slice(0, 60),
-        }));
-        const after = levelFromXp(get().xp);
-        return { leveledUp: after > before, newLevel: after };
+        set((s) => ({ history: [{ ...result, at: Date.now() }, ...s.history].slice(0, 60) }));
+
+        // Las estrellas ya se anotaron respuesta a respuesta, así que el "antes"
+        // se reconstruye restando las que dio esta ronda.
+        const after = countStars(get().stats);
+        const rank = rankForStars(after);
+        return {
+          rank: rank.title,
+          rankUp: rank.title !== rankForStars(after - result.stars).title,
+          stars: result.stars,
+        };
       },
 
-      reset: () =>
-        set({ xp: 0, streak: 0, bestStreak: 0, lastPlayed: null, stats: {}, history: [] }),
+      reset: () => set({ streak: 0, bestStreak: 0, lastPlayed: null, stats: {}, history: [] }),
     }),
     {
-      name: 'atlas-quest-progress-v1',
+      // v1 guardaba XP y niveles con un `stats` sin modo, incompatible con las
+      // estrellas por modo. Se abandona a propósito en vez de migrarse: cualquier
+      // reparto de aquellos aciertos entre los cuatro modos sería inventado.
+      name: 'atlas-quest-progress-v2',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: ({ xp, streak, bestStreak, lastPlayed, stats, history }) => ({
-        xp,
+      partialize: ({ streak, bestStreak, lastPlayed, stats, history }) => ({
         streak,
         bestStreak,
         lastPlayed,
@@ -159,47 +236,91 @@ export const useProgress = create<State>()(
 /* Selectores derivados                                                */
 /* ------------------------------------------------------------------ */
 
-export function selectMastered(stats: StatsMap): string[] {
-  return Object.entries(stats)
-    .filter(([, st]) => isMastered(st))
-    .map(([id]) => id);
+/** Estrellas ganadas en un modo (0..195). */
+export function starsIn(stats: StatsMap, mode: GameMode): number {
+  let n = 0;
+  for (const entry of Object.values(stats)) if (hasStar(entry[mode])) n++;
+  return n;
+}
+
+/** Estrellas rellenas (país dominado) en un modo. */
+export function masteredIn(stats: StatsMap, mode: GameMode): number {
+  let n = 0;
+  for (const entry of Object.values(stats)) if (isMastered(entry[mode])) n++;
+  return n;
+}
+
+/** Total de la colección (0..1170). */
+export function countStars(stats: StatsMap): number {
+  return GAME_MODES.reduce((n, mode) => n + starsIn(stats, mode), 0);
+}
+
+export function countMastered(stats: StatsMap): number {
+  return GAME_MODES.reduce((n, mode) => n + masteredIn(stats, mode), 0);
+}
+
+/** Una fila por modo, lista para pintar en inicio y perfil. */
+export function selectModeProgress(
+  stats: StatsMap
+): { mode: GameMode; stars: number; mastered: number; total: number; ratio: number }[] {
+  return GAME_MODES.map((mode) => {
+    const stars = starsIn(stats, mode);
+    return {
+      mode,
+      stars,
+      mastered: masteredIn(stats, mode),
+      total: STARS_PER_MODE,
+      ratio: stars / STARS_PER_MODE,
+    };
+  });
+}
+
+/** Países con las seis estrellas: el mundo entero en los seis modos. */
+export function selectComplete(stats: StatsMap): string[] {
+  return Object.keys(stats).filter((id) => starsForCountry(stats, id) === GAME_MODES.length);
 }
 
 export function selectAccuracy(stats: StatsMap): number {
-  const vals = Object.values(stats);
-  const seen = vals.reduce((a, s) => a + s.seen, 0);
-  const correct = vals.reduce((a, s) => a + s.correct, 0);
+  let seen = 0;
+  let correct = 0;
+  for (const entry of Object.values(stats)) {
+    const t = totalsForCountry(entry);
+    seen += t.seen;
+    correct += t.correct;
+  }
   return seen === 0 ? 0 : correct / seen;
 }
 
+/** Avance por continente, contando estrellas sobre países × modos. */
 export function selectRegionProgress(
   stats: StatsMap
-): { region: string; mastered: number; total: number; ratio: number }[] {
+): { region: string; stars: number; total: number; ratio: number }[] {
   const totals: Record<string, number> = {};
   const done: Record<string, number> = {};
 
   for (const c of Object.values(byId)) {
-    totals[c.region] = (totals[c.region] ?? 0) + 1;
-    if (isMastered(stats[c.id])) done[c.region] = (done[c.region] ?? 0) + 1;
+    totals[c.region] = (totals[c.region] ?? 0) + GAME_MODES.length;
+    done[c.region] = (done[c.region] ?? 0) + starsForCountry(stats, c.id);
   }
 
   return Object.keys(totals)
     .sort((a, b) => a.localeCompare(b, 'es'))
     .map((region) => ({
       region,
-      mastered: done[region] ?? 0,
+      stars: done[region] ?? 0,
       total: totals[region],
       ratio: (done[region] ?? 0) / totals[region],
     }));
 }
 
-/** Países más fallados, para el bloque "sigue practicando". */
+/** Países más fallados sumando todos los modos, para "sigue practicando". */
 export function selectWeakest(stats: StatsMap, n = 6): string[] {
   return Object.entries(stats)
-    .filter(([, s]) => s.seen >= 2 && s.correct / s.seen < 0.6)
-    .sort((a, b) => a[1].correct / a[1].seen - b[1].correct / b[1].seen)
+    .map(([id, entry]) => ({ id, ...totalsForCountry(entry) }))
+    .filter((s) => s.seen >= 2 && s.correct / s.seen < 0.6)
+    .sort((a, b) => a.correct / a.seen - b.correct / b.seen)
     .slice(0, n)
-    .map(([id]) => id);
+    .map((s) => s.id);
 }
 
 export { TOTAL_COUNTRIES };

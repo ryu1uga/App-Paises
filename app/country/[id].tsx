@@ -17,14 +17,16 @@ import {
   getCountry,
 } from '@/data/countries';
 import { Globe } from '@/globe/Globe';
-import { isMastered, useProgress } from '@/store/progress';
+import { MODE_META } from '@/lib/quiz';
+import { GAME_MODES, starState, totalsForCountry, useProgress } from '@/store/progress';
 import { colors, radius, regionColors, regionGradients, spacing, type } from '@/theme/theme';
 
 export default function CountryDetail() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const country = getCountry(id);
-  const stat = useProgress((s) => s.stats[id ?? '']);
+  const entry = useProgress((s) => s.stats[id ?? '']);
+  const stat = totalsForCountry(entry);
 
   if (!country) {
     return (
@@ -38,7 +40,8 @@ export default function CountryDetail() {
 
   const accent = regionColors[country.region] ?? colors.primary;
   const gradient = regionGradients[country.region] ?? ['#2DD4BF', '#38BDF8'];
-  const accuracy = stat && stat.seen > 0 ? stat.correct / stat.seen : 0;
+  const accuracy = stat.seen > 0 ? stat.correct / stat.seen : 0;
+  const stars = GAME_MODES.filter((m) => starState(entry?.[m]) !== 'none').length;
 
   const facts: { icon: string; label: string; value: string }[] = [
     { icon: 'business', label: 'Capital', value: country.capital },
@@ -107,23 +110,53 @@ export default function CountryDetail() {
         </View>
 
         <View style={{ padding: spacing.xl, gap: spacing.lg, marginTop: -8 }}>
-          {/* Tu progreso con este país */}
-          {stat && (
+          {/* Tus seis estrellas de este país, una por modo. */}
+          {entry && stat.seen > 0 && (
             <Reveal>
               <GlassCard padding={16} accent={gradient}>
                 <View style={styles.rowBetween}>
-                  <Text style={[type.label, { color: colors.textFaint }]}>TU DOMINIO</Text>
-                  {isMastered(stat) && (
+                  <Text style={[type.label, { color: colors.textFaint }]}>TUS ESTRELLAS</Text>
+                  {stars === GAME_MODES.length && (
                     <View style={styles.masteredTag}>
                       <Ionicons name="checkmark-circle" size={13} color={colors.success} />
-                      <Text style={[type.small, { color: colors.success }]}>Dominado</Text>
+                      <Text style={[type.small, { color: colors.success }]}>Las seis</Text>
                     </View>
                   )}
                 </View>
-                <View style={{ marginTop: 10, gap: 6 }}>
+
+                <View style={styles.starGrid}>
+                  {GAME_MODES.map((mode) => {
+                    const state = starState(entry[mode]);
+                    return (
+                      <View key={mode} style={styles.starCell}>
+                        <Ionicons
+                          name={state === 'none' ? 'star-outline' : 'star'}
+                          size={20}
+                          // Ganada = ámbar tenue, dominada = ámbar pleno.
+                          color={
+                            state === 'mastered'
+                              ? colors.warning
+                              : state === 'earned'
+                                ? 'rgba(251,191,36,0.5)'
+                                : colors.textFaint
+                          }
+                        />
+                        <Text
+                          style={[type.label, { color: colors.textFaint, textAlign: 'center' }]}
+                          numberOfLines={2}
+                        >
+                          {MODE_META[mode].title}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                <View style={{ marginTop: 12, gap: 6 }}>
                   <ProgressBar ratio={accuracy} gradient={gradient} />
                   <Text style={[type.small, { color: colors.textDim }]}>
                     {stat.correct} aciertos de {stat.seen} intentos ({Math.round(accuracy * 100)} %)
+                    · la estrella se rellena al dominar el modo
                   </Text>
                 </View>
               </GlassCard>
@@ -217,6 +250,9 @@ const styles = StyleSheet.create({
   },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   masteredTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  // Seis modos no caben en una fila sin machacar los rótulos: dos filas de tres.
+  starGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14, rowGap: 14 },
+  starCell: { width: '33.33%', alignItems: 'center', gap: 5, paddingHorizontal: 2 },
   factGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   fact: {
     width: '48%',

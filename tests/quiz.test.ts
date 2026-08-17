@@ -1,9 +1,32 @@
-import { countriesOf, regions } from '@/data/countries';
-import { reviewWeight, type StatsMap } from '@/lib/mastery';
-import { buildQuiz, scoreAnswer, type GameMode } from '@/lib/quiz';
+import { byId, countries, countriesOf, regions } from '@/data/countries';
+import { GAME_MODES, reviewWeight, type StatsMap } from '@/lib/mastery';
+import {
+  buildQuiz,
+  correction,
+  isHomonymCapital,
+  MODE_META,
+  optionLabel,
+  promptFor,
+  scoreAnswer,
+  type GameMode,
+} from '@/lib/quiz';
 
-const MULTIPLE_CHOICE: GameMode[] = ['flags', 'capitals', 'flagsReverse'];
+/** Todos menos `locate`, que resuelve tocando el globo y no lleva opciones. */
+const MULTIPLE_CHOICE: GameMode[] = [
+  'flags',
+  'flagsReverse',
+  'capitals',
+  'capitalsReverse',
+  'locateReverse',
+];
 const DAY = 86_400_000;
+
+/** Atajo para construir una estadística de un modo. Lo usan varios bloques. */
+const stat = (seen: number, correct: number, lastCorrect: number | null = null) => ({
+  seen,
+  correct,
+  lastCorrect,
+});
 
 describe('buildQuiz', () => {
   it.each(MULTIPLE_CHOICE)('%s da 4 opciones con la correcta dentro', (mode) => {
@@ -62,13 +85,119 @@ describe('buildQuiz', () => {
   });
 });
 
-describe('repetición espaciada', () => {
-  const stat = (seen: number, correct: number, lastCorrect: number | null = null) => ({
-    seen,
-    correct,
-    lastCorrect,
+describe('enunciados', () => {
+  const paisesBajos = byId.NLD;
+
+  it('bandera inversa no pone texto en los botones', () => {
+    // El fallo que había: la respuesta era la bandera, pero al lado ponía
+    // «Países Bajos». Se resolvía leyendo, sin mirar una sola bandera. Ahora
+    // las opciones son solo banderas, y el nombre lo revela la caja al fallar.
+    expect(optionLabel('flagsReverse', paisesBajos)).toBeNull();
   });
 
+  it('los demás modos sí tienen texto en los botones', () => {
+    expect(optionLabel('flags', paisesBajos)).toBe(paisesBajos.nameEs);
+    expect(optionLabel('capitals', paisesBajos)).toBe(paisesBajos.capital);
+    expect(optionLabel('capitalsReverse', paisesBajos)).toBe(paisesBajos.nameEs);
+    expect(optionLabel('locateReverse', paisesBajos)).toBe(paisesBajos.nameEs);
+  });
+
+  it('ningún modo enseña en los botones lo mismo que en el enunciado', () => {
+    // La regla general: si el texto del botón repite el dato del enunciado, el
+    // modo es un ejercicio de lectura. Cuando uno de los dos lados es una
+    // imagen su texto es `null` y no hay nada que repetir.
+    for (const mode of GAME_MODES) {
+      if (mode === 'locate') continue;
+      const { subject } = promptFor(mode, paisesBajos);
+      const label = optionLabel(mode, paisesBajos);
+      if (subject === null || label === null) continue;
+      expect(label).not.toBe(subject);
+    }
+  });
+
+  it('enunciado y opción nunca son imagen los dos a la vez', () => {
+    // Si los dos fueran imagen no habría pregunta que hacer.
+    for (const mode of GAME_MODES) {
+      if (mode === 'locate') continue;
+      const mudo =
+        promptFor(mode, paisesBajos).subject === null && optionLabel(mode, paisesBajos) === null;
+      expect(mudo).toBe(false);
+    }
+  });
+
+  it('los modos visuales no tienen enunciado de texto', () => {
+    // Si alguien le pusiera texto a estos, la pantalla lo pintaría junto a la
+    // imagen y volvería a delatar la respuesta.
+    expect(promptFor('flags', paisesBajos).subject).toBeNull();
+    expect(promptFor('locateReverse', paisesBajos).subject).toBeNull();
+  });
+
+  it('la corrección va en la dirección del modo', () => {
+    expect(correction('capitals', paisesBajos)).toContain(`capital de ${paisesBajos.nameEs}`);
+    expect(correction('capitalsReverse', paisesBajos)).toMatch(
+      new RegExp(`^${paisesBajos.capital} es la capital`)
+    );
+  });
+});
+
+describe('cobertura de los modos', () => {
+  it('todos tienen ficha y una pantalla que existe', () => {
+    for (const mode of GAME_MODES) {
+      const meta = MODE_META[mode];
+      expect(meta).toBeDefined();
+      expect(meta.title.length).toBeGreaterThan(0);
+      expect(['/game/play', '/game/locate', '/game/identify']).toContain(meta.screen);
+    }
+  });
+
+  it('todos puntúan sin NaN', () => {
+    // Si a un modo le faltara su ventana de velocidad, el bonus saldría NaN y la
+    // partida sumaría cero en silencio.
+    for (const mode of GAME_MODES) {
+      const pts = scoreAnswer({ correct: true, msElapsed: 1000, streak: 0, difficulty: 2, mode });
+      expect(Number.isFinite(pts)).toBe(true);
+      expect(pts).toBeGreaterThan(100);
+    }
+  });
+
+  it('no repite títulos', () => {
+    const titles = GAME_MODES.map((m) => MODE_META[m].title);
+    expect(new Set(titles).size).toBe(titles.length);
+  });
+});
+
+describe('capital inversa', () => {
+  const homonimos = countries.filter(isHomonymCapital);
+
+  it('el dataset tiene países cuya capital se llama igual que ellos', () => {
+    // Si un día dejara de haberlos, el señuelo de abajo sobraría.
+    expect(homonimos.length).toBeGreaterThan(1);
+  });
+
+  it('acompaña a los homónimos de otro homónimo', () => {
+    // Con «Mónaco» de enunciado y una sola opción llamada así, la pregunta se
+    // resuelve leyendo, no sabiendo. Tiene que haber al menos dos candidatos
+    // con esa propiedad.
+    for (let i = 0; i < 60; i++) {
+      for (const q of buildQuiz({ mode: 'capitalsReverse', region: null, length: 30 })) {
+        if (!isHomonymCapital(q.target)) continue;
+        expect(q.options.filter(isHomonymCapital).length).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it('no mete el señuelo donde no hace falta', () => {
+    // En el modo directo las opciones son capitales: el truco no aplica y la
+    // lista debe seguir siendo la de siempre, por cercanía geográfica.
+    let conVarios = 0;
+    for (const q of buildQuiz({ mode: 'capitals', region: null, length: 30 })) {
+      if (q.options.filter(isHomonymCapital).length >= 2) conVarios++;
+    }
+    expect(conVarios).toBeLessThan(5);
+  });
+});
+
+describe('repetición espaciada', () => {
   it('prioriza lo nunca visto sobre lo dominado', () => {
     const nuevo = reviewWeight(2, undefined);
     const dominado = reviewWeight(2, stat(10, 10, Date.now()));
@@ -101,8 +230,8 @@ describe('repetición espaciada', () => {
     const fallados = pool.slice(0, 10).map((c) => c.id);
     const stats: StatsMap = {};
     // Todo dominado salvo diez que se fallan siempre.
-    for (const c of pool) stats[c.id] = stat(10, 10, Date.now());
-    for (const id of fallados) stats[id] = stat(10, 0, null);
+    for (const c of pool) stats[c.id] = { flags: stat(10, 10, Date.now()) };
+    for (const id of fallados) stats[id] = { flags: stat(10, 0, null) };
 
     let apariciones = 0;
     const rondas = 40;
@@ -113,14 +242,68 @@ describe('repetición espaciada', () => {
       apariciones += ids.filter((id) => fallados.includes(id)).length;
     }
 
-    // Sin ponderar saldrían ~0,6 por ronda (10 de 195); con repetición espaciada
-    // deben salir muchos más.
+    // Sin ponderar saldrían ~0,6 por ronda (10 de 195). Al no tener estrella caen
+    // en la pila de repaso, que tiene reservada la mitad de la ronda.
     expect(apariciones / rondas).toBeGreaterThan(3);
   });
 
   it('sin historial mantiene el reparto por tramos', () => {
     const quiz = buildQuiz({ mode: 'flags', region: null, length: 20 });
     expect(quiz).toHaveLength(20);
+  });
+});
+
+describe('el mazo', () => {
+  /** Encadena rondas anotando cada respuesta como acierto. */
+  const jugar = (rondas: number, length = 12, mode: GameMode = 'flags') => {
+    const stats: StatsMap = {};
+    const vistos: string[] = [];
+
+    for (let r = 0; r < rondas; r++) {
+      for (const q of buildQuiz({ mode, region: null, length, stats })) {
+        vistos.push(q.target.id);
+        const prev = stats[q.target.id]?.[mode];
+        stats[q.target.id] = {
+          ...stats[q.target.id],
+          [mode]: {
+            seen: (prev?.seen ?? 0) + 1,
+            correct: (prev?.correct ?? 0) + 1,
+            lastCorrect: Date.now(),
+          },
+        };
+      }
+    }
+    return { stats, vistos };
+  };
+
+  it('acertando siempre, ningún país se repite antes de ver los 195', () => {
+    // 16 rondas de 12 = 192 preguntas, aún por debajo de los 195 del mazo.
+    const { vistos } = jugar(16);
+    expect(vistos).toHaveLength(192);
+    expect(new Set(vistos).size).toBe(192);
+  });
+
+  it('un país fallado vuelve pronto, sin esperar a dar la vuelta al mazo', () => {
+    const fallado = countriesOf(null)[0].id;
+    const stats: StatsMap = { [fallado]: { flags: stat(1, 0) } };
+
+    let apariciones = 0;
+    for (let i = 0; i < 40; i++) {
+      const ids = buildQuiz({ mode: 'flags', region: null, length: 12, stats }).map(
+        (q) => q.target.id
+      );
+      if (ids.includes(fallado)) apariciones++;
+    }
+    // Con un mazo estricto de 195 cartas tardaría ~16 rondas en reaparecer.
+    expect(apariciones).toBeGreaterThan(20);
+  });
+
+  it('cada modo tiene su propio mazo', () => {
+    const { stats } = jugar(4, 12, 'flags');
+    const enCapitales = buildQuiz({ mode: 'capitals', region: null, length: 12, stats });
+    // Lo jugado en banderas no gasta el mazo de capitales.
+    expect(enCapitales).toHaveLength(12);
+    expect(enCapitales.every((q) => (stats[q.target.id]?.capitals?.seen ?? 0) === 0)).toBe(true);
   });
 });
 

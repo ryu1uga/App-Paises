@@ -111,9 +111,19 @@ export const font = {
   bodyBold: 'Inter_700Bold',
 } as const;
 
+/**
+ * Escala tipográfica.
+ *
+ * Los dos tamaños grandes usan Outfit, que es una tipografía de titular con
+ * ascendentes y descendentes muy largas. Sus interlineados van holgados a
+ * propósito —1,25 veces el cuerpo, no 1,1— porque por debajo de eso Android
+ * recorta lo que sobresale de la caja de línea: la cola de la «g» de «Elige» o
+ * la tilde de «Cartógrafo» desaparecían. El resto de la escala usa Inter, que
+ * es mucho más contenida y se apaña con menos.
+ */
 export const type = {
-  hero: { fontFamily: font.displayBlack, fontSize: 40, lineHeight: 44, letterSpacing: -1 },
-  h1: { fontFamily: font.display, fontSize: 30, lineHeight: 36, letterSpacing: -0.6 },
+  hero: { fontFamily: font.displayBlack, fontSize: 40, lineHeight: 50, letterSpacing: -1 },
+  h1: { fontFamily: font.display, fontSize: 30, lineHeight: 38, letterSpacing: -0.6 },
   h2: { fontFamily: font.display, fontSize: 23, lineHeight: 29, letterSpacing: -0.4 },
   h3: { fontFamily: font.displayMedium, fontSize: 18, lineHeight: 24, letterSpacing: -0.2 },
   body: { fontFamily: font.body, fontSize: 15, lineHeight: 22 },

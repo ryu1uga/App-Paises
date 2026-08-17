@@ -14,16 +14,28 @@ import Animated, {
 import { Flag } from '@/components/Flag';
 import { GlassCard } from '@/components/GlassCard';
 import { QuizProgress } from '@/components/Meters';
-import { OptionButton } from '@/components/Pressables';
+import { FlagOption, OptionButton } from '@/components/Pressables';
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import type { Country } from '@/data/countries';
-import { buildQuiz, MODE_META, scoreAnswer, type Question } from '@/lib/quiz';
+import {
+  buildQuiz,
+  correction,
+  MODE_META,
+  optionLabel,
+  promptFor,
+  scoreAnswer,
+  type Question,
+} from '@/lib/quiz';
 import { useProgress } from '@/store/progress';
 import { useSession } from '@/store/session';
 import { colors, radius, spacing, type } from '@/theme/theme';
 
-/** Pantalla común a los modos de opción múltiple: banderas, banderas inversas y capitales. */
+/**
+ * Pantalla común a los cuatro modos de opción múltiple: banderas, bandera
+ * inversa, capitales y capital inversa. Lo único que cambia entre ellos es qué
+ * se enseña arriba y qué se lee en los botones.
+ */
 export default function Play() {
   const router = useRouter();
   const { mode, region, length } = useSession();
@@ -64,9 +76,25 @@ export default function Play() {
     const correct = country.id === q.target.id;
     setPicked(country.id);
 
-    const points = scoreAnswer({ correct, msElapsed: ms, streak, difficulty: q.target.difficulty });
-    push({ countryId: q.target.id, correct, given: country.id, points, ms });
-    registerAnswer(q.target.id, correct);
+    const points = scoreAnswer({
+      correct,
+      msElapsed: ms,
+      streak,
+      difficulty: q.target.difficulty,
+      mode,
+    });
+    // El store es quien sabe si esta respuesta ganó estrella, así que se anota
+    // primero y su respuesta viaja en el log hasta la pantalla de resultados.
+    const gain = registerAnswer(q.target.id, mode, correct);
+    push({
+      countryId: q.target.id,
+      correct,
+      given: country.id,
+      points,
+      ms,
+      newStar: gain.newStar,
+      newMastered: gain.newMastered,
+    });
 
     if (correct) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -95,8 +123,12 @@ export default function Play() {
     return 'muted' as const;
   };
 
-  const isFlagQuestion = mode === 'flags';
-  const isReverse = mode === 'flagsReverse';
+  // Qué se enseña arriba y qué se enseña en los botones. Los modos "directos"
+  // preguntan por el país; los inversos parten del dato y piden el país.
+  const prompt = promptFor(mode, q.target);
+  // Sin texto de enunciado, el enunciado es la bandera.
+  const showsFlagPrompt = prompt.subject === null;
+  const showsFlagOptions = mode === 'flagsReverse';
 
   return (
     <Screen>
@@ -124,59 +156,78 @@ export default function Play() {
           <Reveal trigger={index} from="scale" key={`prompt-${index}`}>
             <GlassCard padding={0} accent={meta.gradient} borderRadius={radius.xl}>
               <View style={styles.prompt}>
-                {isFlagQuestion ? (
-                  <Flag id={q.target.id} width={210} rounded={radius.md} />
+                {showsFlagPrompt ? (
+                  <>
+                    <Flag id={q.target.id} width={210} rounded={radius.md} />
+                    <Text style={[type.label, { color: colors.textFaint, marginTop: 16 }]}>
+                      {prompt.question}
+                    </Text>
+                  </>
                 ) : (
                   <>
-                    <Text style={[type.label, { color: colors.textFaint }]}>
-                      {isReverse ? '¿CUÁL ES SU BANDERA?' : '¿CUÁL ES LA CAPITAL DE?'}
-                    </Text>
+                    <Text style={[type.label, { color: colors.textFaint }]}>{prompt.question}</Text>
                     <Text
                       style={[type.hero, { color: colors.text, textAlign: 'center', marginTop: 8 }]}
                       maxFontSizeMultiplier={1.4}
                     >
-                      {q.target.nameEs}
+                      {prompt.subject}
                     </Text>
                     <Text style={[type.small, { color: colors.textDim, marginTop: 6 }]}>
                       {q.target.subregion}
                     </Text>
                   </>
                 )}
-                {isFlagQuestion && (
-                  <Text style={[type.label, { color: colors.textFaint, marginTop: 16 }]}>
-                    ¿DE QUÉ PAÍS ES ESTA BANDERA?
-                  </Text>
-                )}
               </View>
             </GlassCard>
           </Reveal>
         </Animated.View>
 
-        {/* Opciones */}
-        <View style={{ gap: 10, flex: 1 }}>
-          {q.options.map((option, i) => (
-            <Reveal key={`${index}-${option.id}`} delay={60 + i * 55} from="right">
-              <OptionButton
-                label={optionLabel(mode, option)}
-                sublabel={picked && option.id === q.target.id ? option.subregion : undefined}
-                state={stateFor(option)}
-                onPress={() => answer(option)}
-                disabled={!!picked}
-                leading={
-                  isReverse ? (
-                    <Flag id={option.id} width={54} />
-                  ) : (
+        {/* Opciones. Las banderas van en rejilla 2×2: puestas en columna se
+            comparan de dos en dos, y el juego es compararlas todas de un vistazo. */}
+        {showsFlagOptions ? (
+          <View style={styles.flagGrid}>
+            {q.options.map((option, i) => (
+              <Reveal
+                key={`${index}-${option.id}`}
+                delay={60 + i * 55}
+                from="scale"
+                style={styles.flagGridItem}
+              >
+                <FlagOption
+                  id={option.id}
+                  name={option.nameEs}
+                  position={i + 1}
+                  total={q.options.length}
+                  revealed={!!picked}
+                  state={stateFor(option)}
+                  onPress={() => answer(option)}
+                  disabled={!!picked}
+                />
+              </Reveal>
+            ))}
+          </View>
+        ) : (
+          <View style={{ gap: 10, flex: 1 }}>
+            {q.options.map((option, i) => (
+              <Reveal key={`${index}-${option.id}`} delay={60 + i * 55} from="right">
+                <OptionButton
+                  label={optionLabel(mode, option) ?? option.nameEs}
+                  sublabel={picked && option.id === q.target.id ? option.subregion : undefined}
+                  state={stateFor(option)}
+                  onPress={() => answer(option)}
+                  disabled={!!picked}
+                  leading={
                     <View style={styles.bullet}>
                       <Text style={[type.bodyStrong, { color: colors.textDim }]}>
                         {String.fromCharCode(65 + i)}
                       </Text>
                     </View>
-                  )
-                }
-              />
-            </Reveal>
-          ))}
-        </View>
+                  }
+                />
+              </Reveal>
+            ))}
+          </View>
+        )}
 
         {/* Aviso de respuesta correcta cuando se falla */}
         {picked && picked !== q.target.id && (
@@ -184,9 +235,7 @@ export default function Play() {
             <View style={styles.correctionBar}>
               <Ionicons name="information-circle" size={18} color={colors.secondary} />
               <Text style={[type.small, { color: colors.textDim, flex: 1 }]}>
-                {mode === 'capitals'
-                  ? `La capital de ${q.target.nameEs} es ${q.target.capital}.`
-                  : `Era ${q.target.nameEs} · ${q.target.subregion}.`}
+                {correction(mode, q.target)}
               </Text>
             </View>
           </Reveal>
@@ -194,11 +243,6 @@ export default function Play() {
       </View>
     </Screen>
   );
-}
-
-function optionLabel(mode: string, c: Country): string {
-  if (mode === 'capitals') return c.capital;
-  return c.nameEs;
 }
 
 const styles = StyleSheet.create({
@@ -221,6 +265,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(251,191,36,0.14)',
   },
   prompt: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.lg },
+  flagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  flagGridItem: { width: '47.5%', flexGrow: 1 },
   bullet: {
     width: 34,
     height: 34,

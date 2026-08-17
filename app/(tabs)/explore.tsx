@@ -23,7 +23,7 @@ import {
 } from '@/data/countries';
 import { Globe, type GlobeHandle, type GlobeMarker } from '@/globe/Globe';
 import { countryNear } from '@/lib/locate';
-import { isMastered, useProgress } from '@/store/progress';
+import { GAME_MODES, starsForCountry, useProgress } from '@/store/progress';
 import { colors, radius, regionColors, spacing, type } from '@/theme/theme';
 
 export default function Explore() {
@@ -95,16 +95,12 @@ export default function Explore() {
           pointerEvents="none"
         />
 
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.iconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Volver"
-          >
-            <Ionicons name="chevron-back" size={20} color={colors.text} />
-          </Pressable>
-          <Text style={[type.h3, { color: colors.text, flex: 1 }]}>Explorar</Text>
+        {/* Sin botón de volver: es una pestaña, no una pantalla apilada. */}
+        <View style={styles.header} pointerEvents="none">
+          <Text style={[type.h2, { color: colors.text }]}>Explorar</Text>
+          <Text style={[type.small, { color: colors.textDim }]}>
+            Gira el planeta o busca en la lista
+          </Text>
         </View>
 
         {selected && (
@@ -140,7 +136,11 @@ export default function Explore() {
             autoCorrect={false}
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery('')}>
+            <Pressable
+              onPress={() => setQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Borrar la búsqueda"
+            >
               <Ionicons name="close-circle" size={17} color={colors.textFaint} />
             </Pressable>
           )}
@@ -151,6 +151,9 @@ export default function Explore() {
           showsHorizontalScrollIndicator={false}
           data={['Todos', ...regions]}
           keyExtractor={(r) => r}
+          // Sin `flexGrow: 0` una lista horizontal se reparte el alto sobrante
+          // con la de resultados en vez de ceñirse a sus chips.
+          style={{ flexGrow: 0 }}
           contentContainerStyle={{ gap: 8, paddingVertical: 12 }}
           renderItem={({ item }) => (
             <Chip
@@ -166,13 +169,17 @@ export default function Explore() {
           data={results}
           keyExtractor={(c) => c.id}
           showsVerticalScrollIndicator={false}
+          // Sin `flex: 1` la lista crece con sus 195 filas y el panel le recorta
+          // el final: las últimas quedaban fuera y sin manera de alcanzarlas.
+          style={{ flex: 1 }}
           contentContainerStyle={{ paddingBottom: 24, gap: 8 }}
           initialNumToRender={14}
           windowSize={9}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <CountryRow
               country={item}
-              mastered={isMastered(stats[item.id])}
+              stars={starsForCountry(stats, item.id)}
               active={selected?.id === item.id}
               onPress={() => focus(item)}
               onOpen={() => router.push({ pathname: '/country/[id]', params: { id: item.id } })}
@@ -191,23 +198,25 @@ export default function Explore() {
 
 function CountryRow({
   country,
-  mastered,
+  stars,
   active,
   onPress,
   onOpen,
 }: {
   country: Country;
-  mastered: boolean;
+  /** Estrellas ganadas de las 4 posibles (una por modo). */
+  stars: number;
   active: boolean;
   onPress: () => void;
   onOpen: () => void;
 }) {
+  const complete = stars === GAME_MODES.length;
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`${country.nameEs}. Capital ${country.capital}${mastered ? '. Dominado' : ''}`}
+      accessibilityLabel={`${country.nameEs}. Capital ${country.capital}. ${stars} de ${GAME_MODES.length} estrellas`}
       accessibilityHint="Toca para centrarlo en el globo, mantén pulsado para ver su ficha"
       accessibilityState={{ selected: active }}
       style={[styles.row, active && { borderColor: colors.primary, backgroundColor: 'rgba(45,212,191,0.10)' }]}
@@ -218,7 +227,16 @@ function CountryRow({
           <Text style={[type.bodyStrong, { color: colors.text }]} numberOfLines={1}>
             {country.nameEs}
           </Text>
-          {mastered && <Ionicons name="checkmark-circle" size={14} color={colors.success} />}
+          {complete ? (
+            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+          ) : (
+            stars > 0 && (
+              <View style={styles.starCount}>
+                <Ionicons name="star" size={10} color={colors.warning} />
+                <Text style={[type.label, { color: colors.warning }]}>{stars}</Text>
+              </View>
+            )
+          )}
         </View>
         <Text style={[type.small, { color: colors.textFaint }]} numberOfLines={1}>
           {country.capital} · {country.subregion}
@@ -238,23 +256,12 @@ function CountryRow({
 }
 
 const styles = StyleSheet.create({
-  globeWrap: { height: '46%', overflow: 'hidden' },
+  globeWrap: { height: '42%', overflow: 'hidden' },
   topFade: { position: 'absolute', top: 0, left: 0, right: 0, height: 120 },
   bottomFade: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 120 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-  },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   selectedCard: {
     position: 'absolute',
@@ -294,4 +301,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
   openBtn: { padding: 4 },
+  starCount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(251,191,36,0.14)',
+  },
 });

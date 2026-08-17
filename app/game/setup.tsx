@@ -30,7 +30,7 @@ export default function Setup() {
 
   const start = () => {
     configure({ mode, region, length: effectiveLength });
-    router.replace(mode === 'locate' ? '/game/locate' : '/game/play');
+    router.replace(MODE_META[mode].screen);
   };
 
   return (
