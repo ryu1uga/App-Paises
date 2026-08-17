@@ -234,9 +234,19 @@ export function createPinField(capacity: number): THREE.InstancedMesh {
   return mesh;
 }
 
-/** Anillo plano orientado hacia la cámara, usado como pulso del marcador. */
+/** Radio interior del anillo del pulso, relativo al exterior (que vale 1). */
+export const PULSE_RING_INNER = 0.86;
+
+/**
+ * Anillo del pulso, de radio exterior 1 para poder escalarlo a voluntad.
+ *
+ * Va tumbado en el plano XY (normal +Z): quien lo coloca lo orienta con
+ * `setFromUnitVectors` contra la normal del punto y lo hunde hasta que su borde
+ * interior queda inscrito en la esfera, de modo que la onda se expande *sobre*
+ * el planeta en vez de atravesarlo.
+ */
 export function createPulseRing(color = '#FBBF24'): THREE.Mesh {
-  const geometry = new THREE.RingGeometry(0.045, 0.055, 48);
+  const geometry = new THREE.RingGeometry(PULSE_RING_INNER, 1, 64);
   const material = new THREE.MeshBasicMaterial({
     color: new THREE.Color(color),
     transparent: true,
