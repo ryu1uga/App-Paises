@@ -18,12 +18,16 @@ import { OptionButton } from '@/components/Pressables';
 import { Reveal } from '@/components/Reveal';
 import { Screen } from '@/components/Screen';
 import type { Country } from '@/data/countries';
-import { buildQuiz, MODE_META, scoreAnswer, type Question } from '@/lib/quiz';
+import { buildQuiz, MODE_META, scoreAnswer, type GameMode, type Question } from '@/lib/quiz';
 import { useProgress } from '@/store/progress';
 import { useSession } from '@/store/session';
 import { colors, radius, spacing, type } from '@/theme/theme';
 
-/** Pantalla común a los modos de opción múltiple: banderas, banderas inversas y capitales. */
+/**
+ * Pantalla común a los cuatro modos de opción múltiple: banderas, bandera
+ * inversa, capitales y capital inversa. Lo único que cambia entre ellos es qué
+ * se enseña arriba y qué se lee en los botones.
+ */
 export default function Play() {
   const router = useRouter();
   const { mode, region, length } = useSession();
@@ -111,8 +115,11 @@ export default function Play() {
     return 'muted' as const;
   };
 
-  const isFlagQuestion = mode === 'flags';
-  const isReverse = mode === 'flagsReverse';
+  // Qué se enseña arriba y qué se enseña en los botones. Los tres modos
+  // "directos" preguntan por el país; los inversos parten del dato y piden el país.
+  const showsFlagPrompt = mode === 'flags';
+  const showsFlagOptions = mode === 'flagsReverse';
+  const prompt = promptFor(mode, q.target);
 
   return (
     <Screen>
@@ -140,28 +147,26 @@ export default function Play() {
           <Reveal trigger={index} from="scale" key={`prompt-${index}`}>
             <GlassCard padding={0} accent={meta.gradient} borderRadius={radius.xl}>
               <View style={styles.prompt}>
-                {isFlagQuestion ? (
-                  <Flag id={q.target.id} width={210} rounded={radius.md} />
+                {showsFlagPrompt ? (
+                  <>
+                    <Flag id={q.target.id} width={210} rounded={radius.md} />
+                    <Text style={[type.label, { color: colors.textFaint, marginTop: 16 }]}>
+                      {prompt.question}
+                    </Text>
+                  </>
                 ) : (
                   <>
-                    <Text style={[type.label, { color: colors.textFaint }]}>
-                      {isReverse ? '¿CUÁL ES SU BANDERA?' : '¿CUÁL ES LA CAPITAL DE?'}
-                    </Text>
+                    <Text style={[type.label, { color: colors.textFaint }]}>{prompt.question}</Text>
                     <Text
                       style={[type.hero, { color: colors.text, textAlign: 'center', marginTop: 8 }]}
                       maxFontSizeMultiplier={1.4}
                     >
-                      {q.target.nameEs}
+                      {prompt.subject}
                     </Text>
                     <Text style={[type.small, { color: colors.textDim, marginTop: 6 }]}>
                       {q.target.subregion}
                     </Text>
                   </>
-                )}
-                {isFlagQuestion && (
-                  <Text style={[type.label, { color: colors.textFaint, marginTop: 16 }]}>
-                    ¿DE QUÉ PAÍS ES ESTA BANDERA?
-                  </Text>
                 )}
               </View>
             </GlassCard>
@@ -179,7 +184,7 @@ export default function Play() {
                 onPress={() => answer(option)}
                 disabled={!!picked}
                 leading={
-                  isReverse ? (
+                  showsFlagOptions ? (
                     <Flag id={option.id} width={54} />
                   ) : (
                     <View style={styles.bullet}>
@@ -200,9 +205,7 @@ export default function Play() {
             <View style={styles.correctionBar}>
               <Ionicons name="information-circle" size={18} color={colors.secondary} />
               <Text style={[type.small, { color: colors.textDim, flex: 1 }]}>
-                {mode === 'capitals'
-                  ? `La capital de ${q.target.nameEs} es ${q.target.capital}.`
-                  : `Era ${q.target.nameEs} · ${q.target.subregion}.`}
+                {correction(mode, q.target)}
               </Text>
             </View>
           </Reveal>
@@ -212,9 +215,35 @@ export default function Play() {
   );
 }
 
-function optionLabel(mode: string, c: Country): string {
-  if (mode === 'capitals') return c.capital;
-  return c.nameEs;
+/**
+ * Qué se lee en el botón. Solo Capitales pide capitales; en su inverso las
+ * capitales están arriba y los botones vuelven a ser países.
+ */
+function optionLabel(mode: GameMode, c: Country): string {
+  return mode === 'capitals' ? c.capital : c.nameEs;
+}
+
+/** El enunciado: la pregunta y el dato del que se parte. */
+function promptFor(mode: GameMode, c: Country): { question: string; subject: string } {
+  switch (mode) {
+    case 'flags':
+      return { question: '¿DE QUÉ PAÍS ES ESTA BANDERA?', subject: c.nameEs };
+    case 'flagsReverse':
+      return { question: '¿CUÁL ES SU BANDERA?', subject: c.nameEs };
+    case 'capitals':
+      return { question: '¿CUÁL ES LA CAPITAL DE?', subject: c.nameEs };
+    case 'capitalsReverse':
+      return { question: '¿DE QUÉ PAÍS ES CAPITAL?', subject: c.capital };
+    default:
+      return { question: '¿QUÉ PAÍS ES?', subject: c.nameEs };
+  }
+}
+
+/** La aclaración que aparece al fallar, dicha en la dirección del modo. */
+function correction(mode: GameMode, c: Country): string {
+  if (mode === 'capitals') return `La capital de ${c.nameEs} es ${c.capital}.`;
+  if (mode === 'capitalsReverse') return `${c.capital} es la capital de ${c.nameEs}.`;
+  return `Era ${c.nameEs} · ${c.subregion}.`;
 }
 
 const styles = StyleSheet.create({

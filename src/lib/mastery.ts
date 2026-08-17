@@ -8,10 +8,30 @@
  * colección de estrellas.
  */
 
-export type GameMode = 'flags' | 'capitals' | 'locate' | 'flagsReverse';
+export type GameMode =
+  | 'flags'
+  | 'flagsReverse'
+  | 'capitals'
+  | 'capitalsReverse'
+  | 'locate'
+  | 'locateReverse';
 
-/** Orden canónico de los modos: el que se usa para contar y para pintar. */
-export const GAME_MODES: GameMode[] = ['flags', 'capitals', 'locate', 'flagsReverse'];
+/**
+ * Orden canónico de los modos: el que se usa para contar y para pintar.
+ *
+ * Cada modo va seguido de su inverso. Reconocer y recordar son habilidades
+ * distintas —ver la bandera de Perú y saber que es Perú no implica poder dibujar
+ * mentalmente la bandera de Perú—, así que tenerlos juntos deja claro que son
+ * dos caras del mismo material y no seis retos inconexos.
+ */
+export const GAME_MODES: GameMode[] = [
+  'flags',
+  'flagsReverse',
+  'capitals',
+  'capitalsReverse',
+  'locate',
+  'locateReverse',
+];
 
 /** Estadística acumulada de un país en un modo concreto. */
 export type CountryStat = {
@@ -44,8 +64,8 @@ export function statOf(
 /**
  * Una estrella se gana con el **primer acierto** en ese modo, y no se pierde.
  *
- * Es deliberadamente barata: con 195 países × 4 modos hay 780 estrellas, y
- * exigir dominio para cada una convertía la colección en ~390 rondas. Ganarla
+ * Es deliberadamente barata: con 195 países × 6 modos hay 1170 estrellas, y
+ * exigir dominio para cada una convertía la colección en ~585 rondas. Ganarla
  * marca "ya lo he sacado una vez"; rellenarla (`isMastered`) marca "me lo sé".
  */
 export function hasStar(stat?: CountryStat): boolean {
@@ -67,7 +87,7 @@ export function starState(stat?: CountryStat): StarState {
   return 'none';
 }
 
-/** Cuántas de las 4 estrellas de un país están ganadas. */
+/** Cuántas de las 6 estrellas de un país están ganadas. */
 export function starsForCountry(stats: StatsMap, countryId: string): number {
   const entry = stats[countryId];
   if (!entry) return 0;

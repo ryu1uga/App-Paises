@@ -128,7 +128,7 @@ function QuestCard({
       />
 
       <View style={[styles.cardIcon, { backgroundColor: `${meta.gradient[0]}26` }]}>
-        <Ionicons name={meta.icon as never} size={22} color={meta.gradient[0]} />
+        <Ionicons name={meta.icon as never} size={19} color={meta.gradient[0]} />
       </View>
 
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
@@ -186,19 +186,21 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   gridItem: { width: '47.6%', flexGrow: 1 },
   card: {
-    minHeight: 196,
-    padding: spacing.lg,
+    // Con seis tarjetas hay que bajar de las 196 de cuando eran cuatro, o la
+    // última fila se queda siempre fuera de pantalla.
+    minHeight: 172,
+    padding: spacing.md,
     borderRadius: radius.lg,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
   },
   cardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 15,
+    width: 38,
+    height: 38,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
 });

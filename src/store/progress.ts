@@ -28,7 +28,7 @@ export {
 
 /** Estrellas de un modo: una por país. */
 export const STARS_PER_MODE = TOTAL_COUNTRIES;
-/** Colección completa: 195 países × 4 modos. */
+/** Colección completa: 195 países × 6 modos. */
 export const TOTAL_STARS = TOTAL_COUNTRIES * GAME_MODES.length;
 
 export type RunResult = {
@@ -79,8 +79,14 @@ const daysBetween = (a: string, b: string) => {
 
 /**
  * Los rangos ya no cuelgan de una curva de XP inventada: se reparten a lo largo
- * de las 780 estrellas, así que cada uno significa una porción concreta del
+ * de las 1170 estrellas, así que cada uno significa una porción concreta del
  * mundo aprendida.
+ *
+ * Son trece y no nueve por una razón concreta. Con nueve rangos y cuatro modos
+ * el escalón era de 86,67 estrellas; al añadir los dos modos inversos habría
+ * pasado a 130 y quien ya estuviera jugando habría **bajado de rango sin haber
+ * hecho nada mal**. Los cuatro títulos nuevos van al final a propósito, para
+ * que los nueve primeros sigan significando lo mismo que antes.
  */
 export const RANK_TITLES = [
   'Turista',
@@ -92,9 +98,26 @@ export const RANK_TITLES = [
   'Trotamundos',
   'Maestro del Atlas',
   'Leyenda global',
+  'Memoria del mundo',
+  'Cronista del planeta',
+  'Atlas viviente',
+  'Gran Cartógrafo',
 ];
 
-const STARS_PER_RANK = TOTAL_STARS / RANK_TITLES.length;
+/**
+ * El escalón es una constante y no `TOTAL_STARS / RANK_TITLES.length` a
+ * propósito.
+ *
+ * Repartir el total entre los rangos parece más limpio, pero ata el corte de
+ * cada rango al tamaño de la colección: cada modo nuevo empuja todos los cortes
+ * hacia arriba y degrada a quien estuviera justo por encima de uno. Fijándolo en
+ * 86 —por debajo de las 86,67 de la versión de cuatro modos— **ningún corte
+ * puede subir nunca**, así que nadie retrocede jamás por un cambio del juego.
+ *
+ * A cambio, el último rango se alcanza a las 1118 de 1170: las últimas 52
+ * estrellas son la recta final del título máximo, que es como debe leerse.
+ */
+const STARS_PER_RANK = 86;
 
 export function rankForStars(stars: number): {
   title: string;
@@ -227,7 +250,7 @@ export function masteredIn(stats: StatsMap, mode: GameMode): number {
   return n;
 }
 
-/** Total de la colección (0..780). */
+/** Total de la colección (0..1170). */
 export function countStars(stats: StatsMap): number {
   return GAME_MODES.reduce((n, mode) => n + starsIn(stats, mode), 0);
 }
@@ -252,7 +275,7 @@ export function selectModeProgress(
   });
 }
 
-/** Países con las cuatro estrellas: el mundo entero en los cuatro modos. */
+/** Países con las seis estrellas: el mundo entero en los seis modos. */
 export function selectComplete(stats: StatsMap): string[] {
   return Object.keys(stats).filter((id) => starsForCountry(stats, id) === GAME_MODES.length);
 }

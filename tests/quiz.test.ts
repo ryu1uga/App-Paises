@@ -1,8 +1,21 @@
-import { countriesOf, regions } from '@/data/countries';
-import { reviewWeight, type StatsMap } from '@/lib/mastery';
-import { buildQuiz, scoreAnswer, type GameMode } from '@/lib/quiz';
+import { countries, countriesOf, regions } from '@/data/countries';
+import { GAME_MODES, reviewWeight, type StatsMap } from '@/lib/mastery';
+import {
+  buildQuiz,
+  isHomonymCapital,
+  MODE_META,
+  scoreAnswer,
+  type GameMode,
+} from '@/lib/quiz';
 
-const MULTIPLE_CHOICE: GameMode[] = ['flags', 'capitals', 'flagsReverse'];
+/** Todos menos `locate`, que resuelve tocando el globo y no lleva opciones. */
+const MULTIPLE_CHOICE: GameMode[] = [
+  'flags',
+  'flagsReverse',
+  'capitals',
+  'capitalsReverse',
+  'locateReverse',
+];
 const DAY = 86_400_000;
 
 /** Atajo para construir una estadística de un modo. Lo usan varios bloques. */
@@ -66,6 +79,63 @@ describe('buildQuiz', () => {
         expect(new Set(caps).size).toBe(caps.length);
       }
     }
+  });
+});
+
+describe('cobertura de los modos', () => {
+  it('todos tienen ficha y una pantalla que existe', () => {
+    for (const mode of GAME_MODES) {
+      const meta = MODE_META[mode];
+      expect(meta).toBeDefined();
+      expect(meta.title.length).toBeGreaterThan(0);
+      expect(['/game/play', '/game/locate', '/game/identify']).toContain(meta.screen);
+    }
+  });
+
+  it('todos puntúan sin NaN', () => {
+    // Si a un modo le faltara su ventana de velocidad, el bonus saldría NaN y la
+    // partida sumaría cero en silencio.
+    for (const mode of GAME_MODES) {
+      const pts = scoreAnswer({ correct: true, msElapsed: 1000, streak: 0, difficulty: 2, mode });
+      expect(Number.isFinite(pts)).toBe(true);
+      expect(pts).toBeGreaterThan(100);
+    }
+  });
+
+  it('no repite títulos', () => {
+    const titles = GAME_MODES.map((m) => MODE_META[m].title);
+    expect(new Set(titles).size).toBe(titles.length);
+  });
+});
+
+describe('capital inversa', () => {
+  const homonimos = countries.filter(isHomonymCapital);
+
+  it('el dataset tiene países cuya capital se llama igual que ellos', () => {
+    // Si un día dejara de haberlos, el señuelo de abajo sobraría.
+    expect(homonimos.length).toBeGreaterThan(1);
+  });
+
+  it('acompaña a los homónimos de otro homónimo', () => {
+    // Con «Mónaco» de enunciado y una sola opción llamada así, la pregunta se
+    // resuelve leyendo, no sabiendo. Tiene que haber al menos dos candidatos
+    // con esa propiedad.
+    for (let i = 0; i < 60; i++) {
+      for (const q of buildQuiz({ mode: 'capitalsReverse', region: null, length: 30 })) {
+        if (!isHomonymCapital(q.target)) continue;
+        expect(q.options.filter(isHomonymCapital).length).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it('no mete el señuelo donde no hace falta', () => {
+    // En el modo directo las opciones son capitales: el truco no aplica y la
+    // lista debe seguir siendo la de siempre, por cercanía geográfica.
+    let conVarios = 0;
+    for (const q of buildQuiz({ mode: 'capitals', region: null, length: 30 })) {
+      if (q.options.filter(isHomonymCapital).length >= 2) conVarios++;
+    }
+    expect(conVarios).toBeLessThan(5);
   });
 });
 

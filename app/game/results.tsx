@@ -167,7 +167,7 @@ export default function Results() {
                   const c = byId[a.countryId];
                   if (!c) return null;
                   const detail =
-                    session.mode === 'capitals'
+                    session.mode === 'capitals' || session.mode === 'capitalsReverse'
                       ? `Capital: ${c.capital}`
                       : a.given && byId[a.given]
                         ? `Elegiste ${byId[a.given].nameEs}`
@@ -201,9 +201,7 @@ export default function Results() {
           <PrimaryButton
             label="Otra ronda"
             gradient={meta.gradient}
-            onPress={() =>
-              router.replace(session.mode === 'locate' ? '/game/locate' : '/game/play')
-            }
+            onPress={() => router.replace(meta.screen)}
             icon={<Ionicons name="refresh" size={18} color="#04121A" />}
           />
           <GhostButton

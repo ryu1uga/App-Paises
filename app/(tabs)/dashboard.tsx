@@ -119,7 +119,7 @@ export default function Dashboard() {
             <Text style={[type.small, { color: colors.textFaint, marginTop: 14 }]}>
               Una estrella por país y modo: se gana al primer acierto y se rellena al dominarlo
               (3 aciertos con al menos 70 % de precisión). {complete} de {TOTAL_COUNTRIES} países
-              tienen las cuatro. Precisión global: {Math.round(accuracy * 100)} %.
+              tienen las seis. Precisión global: {Math.round(accuracy * 100)} %.
             </Text>
           </GlassCard>
         </Reveal>

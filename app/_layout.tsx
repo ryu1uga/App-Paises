@@ -71,6 +71,7 @@ export default function RootLayout() {
           <Stack.Screen name="game/setup" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="game/play" />
           <Stack.Screen name="game/locate" />
+          <Stack.Screen name="game/identify" />
           <Stack.Screen name="game/results" options={{ animation: 'fade' }} />
         </Stack>
       </SafeAreaProvider>

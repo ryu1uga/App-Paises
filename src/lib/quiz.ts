@@ -1,4 +1,4 @@
-import { Country, byId, countries, countriesOf } from '@/data/countries';
+import { Country, byId, countries, countriesOf, normalize } from '@/data/countries';
 import { GAME_MODES, reviewWeight, splitDeck, type GameMode, type StatsMap } from './mastery';
 
 // `GameMode` vive en `mastery.ts` para que ese módulo pueda indexar por modo sin
@@ -76,6 +76,36 @@ function distractors(target: Country, pool: Country[], n: number): Country[] {
     out.push(...sample(rest, n - out.length));
   }
   return out.slice(0, n);
+}
+
+/** Un país cuya capital se llama igual que él: Mónaco, Singapur, Túnez… */
+export function isHomonymCapital(c: Country): boolean {
+  return normalize(c.capital) === normalize(c.nameEs);
+}
+
+const HOMONYM_CAPITALS = countries.filter(isHomonymCapital);
+
+/**
+ * Mete otro país homónimo entre los distractores de «Capital inversa».
+ *
+ * Si el enunciado dice «Luxemburgo» y solo una de las cuatro opciones se llama
+ * así, la pregunta se resuelve sin saber geografía. Esconder esos cinco países
+ * no es opción —son reales y hay que sabérselos—, así que en vez de eso se les
+ * acompaña de otro homónimo: la coincidencia de nombre deja de señalar a uno
+ * solo y hay que decidir de verdad.
+ *
+ * Sustituye al último distractor porque la lista viene ordenada por cercanía
+ * geográfica: el último es el menos relevante de los tres.
+ */
+function withHomonymDecoy(target: Country, picked: Country[]): Country[] {
+  if (!isHomonymCapital(target) || picked.some(isHomonymCapital)) return picked;
+
+  const others = HOMONYM_CAPITALS.filter(
+    (c) => c.id !== target.id && !picked.some((p) => p.id === c.id)
+  );
+  if (others.length === 0 || picked.length === 0) return picked;
+
+  return [...picked.slice(0, -1), pickOne(others)];
 }
 
 /**
@@ -202,42 +232,70 @@ export function buildQuiz(config: QuizConfig): Question[] {
 
   return targets.map((target) => {
     // En "ubicar" el globo muestra los 195 países, así que no hay distractores.
+    // Su inverso sí los lleva: el globo señala el punto y tú eliges el nombre.
     if (config.mode === 'locate') return { target, options: [] };
-    return { target, options: shuffle([target, ...distractors(target, pool, 3)]) };
+
+    let options = distractors(target, pool, 3);
+    if (config.mode === 'capitalsReverse') options = withHomonymDecoy(target, options);
+
+    return { target, options: shuffle([target, ...options]) };
   });
 }
 
+/** Pantalla que juega cada modo. Antes era un `if` repartido por tres ficheros. */
+export type ModeScreen = '/game/play' | '/game/locate' | '/game/identify';
+
 export const MODE_META: Record<
   GameMode,
-  { title: string; subtitle: string; icon: string; gradient: readonly string[]; route: string }
+  {
+    title: string;
+    subtitle: string;
+    icon: string;
+    gradient: readonly string[];
+    screen: ModeScreen;
+  }
 > = {
   flags: {
     title: 'Banderas',
     subtitle: '¿De qué país es esta bandera?',
     icon: 'flag',
     gradient: ['#F472B6', '#A78BFA'],
-    route: '/game/flags',
+    screen: '/game/play',
   },
   flagsReverse: {
     title: 'Bandera inversa',
     subtitle: 'Encuentra la bandera del país',
     icon: 'grid',
     gradient: ['#FB7185', '#FBBF24'],
-    route: '/game/flags?reverse=1',
+    screen: '/game/play',
   },
   capitals: {
     title: 'Capitales',
     subtitle: '¿Cuál es la capital?',
     icon: 'business',
     gradient: ['#38BDF8', '#818CF8'],
-    route: '/game/capitals',
+    screen: '/game/play',
+  },
+  capitalsReverse: {
+    title: 'Capital inversa',
+    subtitle: '¿De qué país es esta capital?',
+    icon: 'map',
+    gradient: ['#818CF8', '#F472B6'],
+    screen: '/game/play',
   },
   locate: {
     title: 'Ubicación',
     subtitle: 'Encuéntralo entre los 195 puntos',
     icon: 'navigate',
     gradient: ['#2DD4BF', '#38BDF8'],
-    route: '/game/locate',
+    screen: '/game/locate',
+  },
+  locateReverse: {
+    title: 'Ubicación inversa',
+    subtitle: '¿Qué país es el punto marcado?',
+    icon: 'pin',
+    gradient: ['#A3E635', '#2DD4BF'],
+    screen: '/game/identify',
   },
 };
 
@@ -248,12 +306,17 @@ export const MODE_META: Record<
  * cuatro botones que ya están en pantalla, mientras que en Ubicación hay que
  * girar el globo y buscar entre 195 puntos. Con una ventana única de 10 s el
  * modo más difícil era el que menos pagaba.
+ *
+ * Ubicación inversa se queda a medio camino: no hay que buscar nada —la cámara
+ * lleva el punto al centro— pero sí esperar al vuelo y leer cuatro opciones.
  */
 const SPEED_WINDOW_MS: Record<GameMode, number> = {
   flags: 10_000,
   flagsReverse: 10_000,
   capitals: 12_000,
+  capitalsReverse: 12_000,
   locate: 30_000,
+  locateReverse: 15_000,
 };
 
 /**

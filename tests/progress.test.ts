@@ -7,6 +7,7 @@ import {
   type StatsMap,
 } from '@/lib/mastery';
 import {
+  RANK_TITLES,
   TOTAL_STARS,
   countStars,
   rankForStars,
@@ -91,8 +92,24 @@ describe('el mazo', () => {
 describe('rangos por estrellas', () => {
   it('empieza en el primero y termina en el último', () => {
     expect(rankForStars(0).title).toBe('Turista');
-    expect(rankForStars(TOTAL_STARS).title).toBe('Leyenda global');
+    expect(rankForStars(TOTAL_STARS).title).toBe('Gran Cartógrafo');
     expect(rankForStars(TOTAL_STARS).next).toBeNull();
+  });
+
+  it('cubre toda la colección con trece títulos', () => {
+    expect(RANK_TITLES).toHaveLength(13);
+    expect(rankForStars(TOTAL_STARS).index).toBe(RANK_TITLES.length - 1);
+  });
+
+  it('nadie baja de rango al añadir modos', () => {
+    // Invariante de compatibilidad: con cuatro modos había nueve rangos sobre
+    // 780 estrellas. Ningún jugador puede despertarse con un rango peor del que
+    // tenía, así que cada corte nuevo debe quedar en o por debajo del viejo.
+    const escalonViejo = 780 / 9;
+    for (let stars = 0; stars <= 780; stars++) {
+      const viejo = Math.min(8, Math.floor(stars / escalonViejo));
+      expect(rankForStars(stars).index).toBeGreaterThanOrEqual(viejo);
+    }
   });
 
   it('nunca retrocede al ganar estrellas', () => {
@@ -106,7 +123,7 @@ describe('rangos por estrellas', () => {
 
   it('aguanta valores fuera de rango', () => {
     expect(rankForStars(-5).title).toBe('Turista');
-    expect(rankForStars(TOTAL_STARS * 3).title).toBe('Leyenda global');
+    expect(rankForStars(TOTAL_STARS * 3).title).toBe('Gran Cartógrafo');
     expect(rankForStars(10).ratio).toBeGreaterThanOrEqual(0);
     expect(rankForStars(10).ratio).toBeLessThanOrEqual(1);
   });

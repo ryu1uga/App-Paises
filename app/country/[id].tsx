@@ -110,7 +110,7 @@ export default function CountryDetail() {
         </View>
 
         <View style={{ padding: spacing.xl, gap: spacing.lg, marginTop: -8 }}>
-          {/* Tus cuatro estrellas de este país, una por modo. */}
+          {/* Tus seis estrellas de este país, una por modo. */}
           {entry && stat.seen > 0 && (
             <Reveal>
               <GlassCard padding={16} accent={gradient}>
@@ -119,7 +119,7 @@ export default function CountryDetail() {
                   {stars === GAME_MODES.length && (
                     <View style={styles.masteredTag}>
                       <Ionicons name="checkmark-circle" size={13} color={colors.success} />
-                      <Text style={[type.small, { color: colors.success }]}>Las cuatro</Text>
+                      <Text style={[type.small, { color: colors.success }]}>Las seis</Text>
                     </View>
                   )}
                 </View>
@@ -143,7 +143,7 @@ export default function CountryDetail() {
                         />
                         <Text
                           style={[type.label, { color: colors.textFaint, textAlign: 'center' }]}
-                          numberOfLines={1}
+                          numberOfLines={2}
                         >
                           {MODE_META[mode].title}
                         </Text>
@@ -250,8 +250,9 @@ const styles = StyleSheet.create({
   },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   masteredTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  starGrid: { flexDirection: 'row', marginTop: 14 },
-  starCell: { flex: 1, alignItems: 'center', gap: 5 },
+  // Seis modos no caben en una fila sin machacar los rótulos: dos filas de tres.
+  starGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14, rowGap: 14 },
+  starCell: { width: '33.33%', alignItems: 'center', gap: 5, paddingHorizontal: 2 },
   factGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   fact: {
     width: '48%',
