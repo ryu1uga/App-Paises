@@ -14,6 +14,7 @@ import {
   formatArea,
   formatNumber,
   formatPopulation,
+  formatYear,
   getCountry,
 } from '@/data/countries';
 import { Globe } from '@/globe/Globe';
@@ -50,10 +51,15 @@ export default function CountryDetail() {
     { icon: 'earth', label: 'Región', value: country.subregion },
     { icon: 'cash', label: 'Moneda', value: country.currency },
     { icon: 'chatbubbles', label: 'Idiomas', value: country.languages.join(', ') || '—' },
+    { icon: 'person', label: 'Gentilicio', value: country.demonym },
   ];
 
+  // `independence` y `founded` son excluyentes: los Estados que nunca fueron
+  // dependencia de otro llevan fecha de fundación, no de independencia.
   if (country.independence)
-    facts.push({ icon: 'flag', label: 'Independencia', value: `${country.independence}` });
+    facts.push({ icon: 'flag', label: 'Independencia', value: formatYear(country.independence) });
+  else if (country.founded)
+    facts.push({ icon: 'flag', label: 'Fundación', value: formatYear(country.founded) });
   if (country.lifeExpectancy)
     facts.push({ icon: 'heart', label: 'Esperanza de vida', value: `${country.lifeExpectancy} años` });
   if (country.avgTemp != null)

@@ -1,4 +1,4 @@
-import { byId, countries, normalize, regions, TOTAL_COUNTRIES } from '@/data/countries';
+import { byId, countries, formatYear, normalize, regions, TOTAL_COUNTRIES } from '@/data/countries';
 import { FLAGS } from '@/data/flags';
 
 describe('dataset de países', () => {
@@ -176,6 +176,42 @@ describe('todo el texto visible está en español', () => {
   });
 });
 
+describe('independencia y fundación', () => {
+  it('no guarda años negativos en `independence`', () => {
+    // La ficha de China llegó a mostrar «Independencia: -1523».
+    const negativos = countries.filter((c) => (c.independence ?? 0) < 0).map((c) => c.id);
+    expect(negativos).toEqual([]);
+  });
+
+  it('trata los dos campos como excluyentes', () => {
+    const ambos = countries.filter((c) => c.independence && c.founded).map((c) => c.id);
+    expect(ambos).toEqual([]);
+  });
+
+  it('da fecha de fundación a los Estados que nunca fueron dependencia', () => {
+    for (const id of ['CHN', 'JPN', 'ETH', 'FRA', 'GBR', 'ESP', 'DEU', 'ITA', 'RUS']) {
+      expect(byId[id].independence).toBeNull();
+      expect(byId[id].founded).not.toBeNull();
+    }
+  });
+
+  it('mantiene la independencia de los Estados que sí la tuvieron', () => {
+    expect(byId.PER.independence).toBe(1821);
+    expect(byId.USA.independence).toBe(1776);
+    expect(byId.IND.independence).toBe(1947);
+    expect(byId.LKA.independence).toBe(1948);
+    expect(byId.TLS.independence).toBe(2002);
+    for (const id of ['PER', 'USA', 'IND', 'LKA', 'TLS']) {
+      expect(byId[id].founded).toBeNull();
+    }
+  });
+
+  it('deja a cada país con al menos una de las dos fechas', () => {
+    const sinNada = countries.filter((c) => !c.independence && !c.founded).map((c) => c.id);
+    expect(sinNada).toEqual([]);
+  });
+});
+
 describe('campos completos', () => {
   it('tiene gentilicio para los 195', () => {
     const vacios = countries.filter((c) => !c.demonym || c.demonym.length < 3).map((c) => c.id);
@@ -186,6 +222,25 @@ describe('campos completos', () => {
     for (const c of countries) {
       expect(c.currency.length).toBeGreaterThan(2);
       expect(c.avgTemp).not.toBeNull();
+    }
+  });
+
+  it('tiene plato típico salvo en el Vaticano', () => {
+    const sinPlato = countries.filter((c) => !c.dish).map((c) => c.id);
+    expect(sinPlato).toEqual(['VAT']); // no tiene cocina nacional propia
+  });
+
+  it('ya no expone el campo `symbol`', () => {
+    // Estaba vacío en 162 de 195 registros y no se usaba en ninguna pantalla.
+    for (const c of countries) {
+      expect(c).not.toHaveProperty('symbol');
+    }
+  });
+
+  it('mantiene la temperatura media en un rango terrestre plausible', () => {
+    for (const c of countries) {
+      expect(c.avgTemp!).toBeGreaterThan(-15);
+      expect(c.avgTemp!).toBeLessThan(35);
     }
   });
 });
@@ -217,6 +272,14 @@ describe('banderas empaquetadas', () => {
     for (const c of countries) {
       expect(FLAGS[c.id]).toBeDefined();
     }
+  });
+});
+
+describe('formatYear', () => {
+  it('marca los años anteriores a Cristo', () => {
+    expect(formatYear(1821)).toBe('1821');
+    expect(formatYear(-1523)).toBe('1523 a.C.');
+    expect(formatYear(-660)).toBe('660 a.C.');
   });
 });
 

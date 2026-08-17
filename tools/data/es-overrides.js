@@ -61,6 +61,14 @@ module.exports = {
   // --- Esperanza de vida sin dato en el Banco Mundial ----------------------
   VAT: { lifeExpectancy: null },
 
-  // --- Temperatura media faltante ------------------------------------------
-  MNE: { avgTemp: 10.6 },                       // media anual, normales climáticas
+  // --- Criterios geopolíticos (statu quo ONU) ------------------------------
+  // Se documentan aquí en vez de cambiarlos, para que la decisión sea explícita:
+  //  - AFG: assets/flags/af.png mantiene la tricolor de la República Islámica,
+  //         que es la que sigue reconociendo la ONU, no la bandera blanca del
+  //         gobierno de facto desde 2021.
+  //  - BOL: `capital` = Sucre (constitucional). La sede de gobierno es La Paz.
+  //  - LKA: `capital` = Colombo (comercial). La oficial es Sri Jayawardenapura Kotte.
+  //  - ISR/PSE: Jerusalén y Ramala son las sedes de facto.
+  //  - ISR: `avgTemp` conserva el valor heredado (20,0 °C); es el único país que
+  //         falta en la tabla de normales climáticas 1991-2020.
 };
